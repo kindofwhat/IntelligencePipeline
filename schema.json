@@ -1,0 +1,44 @@
+{
+  "type": "record",
+  "name": "DataRecord",
+  "namespace": "datatypes",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "representation",
+      "type": {
+        "type": "record",
+        "name": "DocumentRepresentation",
+        "fields": [
+          {
+            "name": "mimeType",
+            "type": "string"
+          },
+          {
+            "name": "path",
+            "type": "string"
+          },
+          {
+            "name": "createdBy",
+            "type": {
+              "type": "record",
+              "name": "PipelineIngestor",
+              "namespace": "participants",
+              "fields": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "meta",
+      "type": {
+        "type": "map",
+        "values": "string"
+      }
+    }
+  ]
+}

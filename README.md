@@ -1,0 +1,63 @@
+# Intelligence Pipeline - Goals
+* provide a fast and persistent data pipeline for documents
+* be as open as possible for modern data analytics/machine learning/AI frameworks
+* gather as much information as possible of documents
+    * Metadata
+    * Authorization
+    * inner structure
+    * relations
+    * categories
+* have a way to compare and weight the results of the different frameworks, e.g. LanuageDetection by Apache Tika and Google
+
+
+# Path chosen
+* be open source
+* use kotlin
+* use kotlin coroutines for modern development
+* data is streaming data, 't is a fact
+* rely on Apache Kafka, 't is a beast
+* have a well designed solution domain
+
+# Open questions
+
+## Domain Design: Inner structure of documents
+How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens) be designed in a streaming enivonrment?
+
+# Notes
+- make sure to set advertised.host.name in the bootstrap config
+
+# Roadmap
+## V0.1: make it available on Github
+
+### Open
+- [ ]  Quickstart Guide
+- [ ]  Good test coverage
+- [ ]  Basic result reporting
+- [ ]  make it available online somewhere
+
+### Done
+- [x] Participiants, Capabilities and requirements
+- [x] check that it's running with local cluster
+
+## V0.2: Check all use cases with Kafka
+
+### Open
+- [ ] Multiple IP in parallel
+- [ ] IP can be rescheduled
+- [ ] Intelligent reprocessing of Metadata
+- [ ] Basic GUI
+
+### Done
+
+
+## V0.3: feature complete
+
+### Open
+- [ ] Possibility for external process to attach via batch
+- [ ] more Ingestors
+- [ ] Ingestors based on Kafka Connect
+- [ ] One ouptclient (DBMS or Graph DB) based on Kafka Connect
+- [ ] (optional) REST API
+
+
+### Done

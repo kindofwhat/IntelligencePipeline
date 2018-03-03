@@ -1,0 +1,18 @@
+{
+  "name": "",
+  "representation": {
+    "path": "",
+    "createdBy": "noop"
+  },
+  "additionalRepresentations": [],
+  "meta": [
+    {
+      "values": {
+        "stored": "Sun Jan 07 14:21:37 CET 2018",
+        "createdBy": "directory",
+        "path": "C:\\Users\\Christian\\Documents\\workspace\\IntelligencePipeline\\src\\test\\resources"
+      },
+      "createdBy": "ingestor"
+    }
+  ]
+}
