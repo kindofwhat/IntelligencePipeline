@@ -18,6 +18,30 @@
 * rely on Apache Kafka, 't is a beast
 * have a well designed solution domain
 
+# Quickstart
+1. Start a Kafka Cluster
+2. Initialise an IntelligencePipeline
+```kotlin
+val pipeline = IntelligencePipeline(bootstrapServers, stateDir)
+```
+where `bootstrapServers` is something like `localhost:9092` and `stateDir` should point to a local directory (used by state stores)
+3. register your ingestors:
+```kotlin 
+pipeline?.registerIngestor(DirectoryIngestor("src/test/resources"))
+``` 
+4. register your MetaDataProducers:
+``` kotlin 
+    pipeline?.registerMetadataProducer(TikaMetadataProducer())
+    pipeline?.registerMetadataProducer(HashMetadataProducer())
+``` 
+5. start the pipeline
+``` kotlin 
+    launch {
+        pipeline?.run()
+    }
+``` 
+
+
 # Open questions
 
 ## Domain Design: Inner structure of documents
