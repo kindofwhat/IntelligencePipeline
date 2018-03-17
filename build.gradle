@@ -2,8 +2,8 @@ group 'IntelligencePipeline'
 version '1.0-SNAPSHOT'
 
 buildscript {
-    ext.kotlin_version = '1.2.21'
-    ext.serialization_version = '0.4'
+    ext.kotlin_version = '1.2.30'
+    ext.serialization_version = '0.4.2'
 
     repositories {
         jcenter()
