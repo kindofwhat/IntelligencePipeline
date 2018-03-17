@@ -29,7 +29,7 @@ import util.log
 import java.util.*
 
 
-class IntelligencePipeline(val kafkaBootstrap: String, val stateDir:String) {
+class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationId:String ="IntelligencePipeline") {
     companion object {
         val DOCUMENTREPRESENTATION_INGESTION_TOPIC = "document-representation-ingestion"
         val DOCUMENTREPRESENTATION_TOPIC = "document-representation"
@@ -69,7 +69,7 @@ class IntelligencePipeline(val kafkaBootstrap: String, val stateDir:String) {
         streamsConfig.put("internal.leave.group.on.close", true)
         streamsConfig.put("commit.interval.ms", 100)
         //streamsConfig.put("processing.guarantee", "exactly_once")
-        streamsConfig.put("application.id", "IntelligencePipeline")
+        streamsConfig.put("application.id", applicationId)
     }
 
     /**

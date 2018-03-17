@@ -7,8 +7,10 @@ import kotlinx.coroutines.experimental.runBlocking
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.Consumed
 import org.apache.kafka.streams.KafkaStreams
+import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster
+import org.apache.kafka.streams.kstream.KTable
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.state.QueryableStoreTypes
 import org.junit.*
@@ -32,7 +34,7 @@ class IntelligencePipelineTests {
 
 
     companion object {
-        val embeddedMode = false
+        val embeddedMode = true
         fun deleteDir(file: File) {
             val contents = file.listFiles()
             if (contents != null) {
@@ -45,8 +47,16 @@ class IntelligencePipelineTests {
         val cluster:EmbeddedKafkaCluster = EmbeddedKafkaCluster(1)
         val streamsConfig = Properties()
         val stateDir = "build/test/state"
-        var pipeline:IntelligencePipeline? = null
+        var hostUrl = "localhost:8080"
+
         class DataRecordSerde() : KotlinSerde<DataRecord>(DataRecord::class.java)
+
+        fun createPipeline(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): IntelligencePipeline {
+            val pipeline = IntelligencePipeline(hostUrl, stateDir,name)
+            ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
+            producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
+            return pipeline
+        }
 
         @AfterClass @JvmStatic
         fun shutdown() {
@@ -82,14 +92,15 @@ class IntelligencePipelineTests {
                  */
                 cluster.start()
                 cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_TOPIC,METADATA_TOPIC,DATARECORD_TOPIC)
-                pipeline = IntelligencePipeline(cluster.bootstrapServers(), stateDir)
+                hostUrl = cluster.bootstrapServers()
+                //pipeline = IntelligencePipeline(cluster.bootstrapServers(), stateDir)
                 println("starting embedded kafka cluster with " + cluster.bootstrapServers())
                 streamsConfig.put("bootstrap.servers", cluster.bootstrapServers())
 
             } else {
-                val hostUrl = "liu:9092"
+                hostUrl = "liu:9092"
                 println("starting with running kafka cluster at " + hostUrl)
-                pipeline = IntelligencePipeline(hostUrl, stateDir)
+                //pipeline = IntelligencePipeline(hostUrl, stateDir)
                 streamsConfig.put("bootstrap.servers", hostUrl)
 
             }
@@ -121,34 +132,58 @@ class IntelligencePipelineTests {
     @Test
     @Throws(Exception::class)
     fun testDirectoryCrawlAndHashCreation() {
-        pipeline?.registerIngestor(DirectoryIngestor("src/test/resources"))
-        pipeline?.registerMetadataProducer(TikaMetadataProducer())
-        pipeline?.registerMetadataProducer(HashMetadataProducer())
-        pipeline?.registerMetadataProducer(AzureCognitiveServicesMetadataProducer("https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/keyPhrases", System
-                .getProperty("accessKey"), pipeline?.registry!!))
-        //streamsConfig.put("processing.guarantee", "exactly_once")
-        val builder = StreamsBuilder()
-        val table = builder.table<Long,DataRecord>(IntelligencePipeline.DATARECORD_TOPIC,
-                Consumed.with(Serdes.LongSerde(),DataRecordSerde()),
-                Materialized.`as`("DataRecordStore"))
-        val streams = KafkaStreams(builder.build(), streamsConfig)
+        val view = createPipelineAndRunWithResults("testDirectoryCrawlAndHashCreation",
+                listOf(DirectoryIngestor("src/test/resources")),
+                listOf(HashMetadataProducer()))
+        println(view)
+        assertEquals(4, view.size)
+        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name} }.size)
+    }
 
+    @Test
+    @Throws(Exception::class)
+    fun testDirectoryCrawlAndTika() {
+        val view = createPipelineAndRunWithResults("testDirectoryCrawlAndTika",
+                listOf(DirectoryIngestor("src/test/resources")),
+                listOf(TikaMetadataProducer()))
+        assertEquals(4, view.size)
+        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer().name} }.size)
+    }
+
+
+
+
+    private fun createPipelineAndRunWithResults(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): List<DataRecord> {
+        val pipeline = createPipeline(name,ingestors,producers)
+        val view = runPipeline(pipeline)
+        return view
+    }
+
+
+    private fun runPipeline(pipeline: IntelligencePipeline): List<DataRecord> {
+        var view = emptyList<DataRecord>()
         launch {
-            pipeline?.run()
+            pipeline.run()
         }
         runBlocking {
-            delay(2000)
-            println("Starting test stream")
-            streams.start()
-            delay(6000)
-            println("retrieving view")
-            val view = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
-                    .all().asSequence().toList()
-            println(view)
-            assertEquals(4, view.size)
-            assertEquals(3, view.filter { kv -> kv.value.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name} }.size)
-            assertEquals(3, view.filter { kv -> kv.value.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer().name} }.size)
-            streams.close()
+            view = createDataRecords("testDirectoryCrawlAndTika")
         }
+        return view
+    }
+
+    private suspend fun createDataRecords(storeName: String): List<DataRecord> {
+        val builder = StreamsBuilder()
+        val table = builder.table<Long, DataRecord>(DATARECORD_TOPIC,
+                Consumed.with(Serdes.LongSerde(), DataRecordSerde()),
+                Materialized.`as`(storeName))
+        val streams = KafkaStreams(builder.build(), streamsConfig)
+        streams.start()
+        delay(4000)
+        val store = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
+        val view = store.all().asSequence().toList()
+        streams.close()
+        delay(1000)
+        streams.cleanUp()
+        return view.map { keyValue ->  keyValue.value}
     }
 }
