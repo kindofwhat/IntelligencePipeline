@@ -150,15 +150,11 @@ class IntelligencePipelineTests {
         assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer().name} }.size)
     }
 
-
-
-
     private fun createPipelineAndRunWithResults(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): List<DataRecord> {
         val pipeline = createPipeline(name,ingestors,producers)
         val view = runPipeline(pipeline)
         return view
     }
-
 
     private fun runPipeline(pipeline: IntelligencePipeline): List<DataRecord> {
         var view = emptyList<DataRecord>()
