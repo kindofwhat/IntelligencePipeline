@@ -25,6 +25,13 @@ interface PipelineIngestor : PipelineParticipant {
     suspend fun ingest(channel: SendChannel<DocumentRepresentation>)
 }
 
+typealias PipelineSideEffect = (key:Long, value:DataRecord) -> Unit
+
+
+/**
+ * this would be an alternative: use functional types
+ */
+typealias MetadataProducerF = (value:DataRecord) -> Metadata
 /**
  * creates a MetaData for a DataRecord
  */

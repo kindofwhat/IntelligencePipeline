@@ -18,9 +18,7 @@ import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.kstream.Produced
-import participants.DocumentRepresentationProducer
-import participants.MetadataProducer
-import participants.PipelineIngestor
+import participants.*
 import pipeline.capabilities.Capability
 import pipeline.capabilities.DefaultCapabilityRegistry
 import pipeline.serialize.KotlinSerde
@@ -29,7 +27,7 @@ import util.log
 import java.util.*
 
 
-class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationId:String ="IntelligencePipeline") {
+class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicationId:String ="IntelligencePipeline") {
     companion object {
         val DOCUMENTREPRESENTATION_INGESTION_TOPIC = "document-representation-ingestion"
         val DOCUMENTREPRESENTATION_TOPIC = "document-representation"
@@ -42,8 +40,10 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationI
     val streamsConfig = Properties()
     var streams:KafkaStreams? = null
 
-    val metadataProducerStreams = mutableListOf<KafkaStreams>()
+    val subStreams = mutableListOf<KafkaStreams>()
     val documentRepresentationProducer = mutableListOf<DocumentRepresentationProducer>()
+    val sideEffects = mutableListOf<PipelineSideEffect>()
+
     val ingestors = mutableListOf<PipelineIngestor>()
     val ingestionChannel = Channel<DocumentRepresentation>(Int.MAX_VALUE)
 
@@ -75,6 +75,34 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationI
     /**
      * creates an own stream for this producer and starts it
      */
+    fun registerSideEffect(name:String, sideEffect: PipelineSideEffect) {
+        val builder = StreamsBuilder()
+
+        //the generic datarecord stream
+        val datarecordStream =
+                builder.stream<Long, DataRecord>(DATARECORD_TOPIC,
+                        Consumed.with(Serdes.LongSerde(),
+                                KotlinSerde(DataRecord::class.java)))
+
+        //all MetadataProducers listen on the datarecord topic and produce metadata to the metadata topic
+        datarecordStream.foreach { key, value ->  sideEffect.apply {  }(key, value)}
+
+
+        val topology = builder.build()
+
+        val myProp = Properties()
+        myProp.putAll(streamsConfig)
+        myProp.put("application.id", applicationId + "_sideeffect_" + name)
+        val streams = KafkaStreams(topology, myProp )
+        streams.start()
+
+        subStreams.add(streams)
+
+    }
+
+    /**
+     * creates an own stream for this producer and starts it
+     */
     fun registerMetadataProducer(prod: MetadataProducer) {
         val builder = StreamsBuilder()
 
@@ -101,11 +129,11 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationI
 
         val myProp = Properties()
         myProp.putAll(streamsConfig)
-        myProp.put("application.id", "IntelligencePipeline_" + prod.name)
+        myProp.put("application.id", applicationId + "_metadata_" + prod.name)
         val streams = KafkaStreams(topology, myProp )
         streams.start()
 
-        metadataProducerStreams.add(streams)
+        subStreams.add(streams)
 
         if(prod is Capability<*>) {
             registry.register(prod as Capability<*>)
@@ -131,7 +159,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationI
     }
 
     fun stop() {
-        metadataProducerStreams.forEach { it.close()}
+        subStreams.forEach { it.close()}
         streams?.close()
     }
 
@@ -141,7 +169,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationI
             streams?.start()
             ingestionChannel.consumeEach { doc ->
                 val out = serialize(doc)
-                val msg = ingestionProducer.send(ProducerRecord<Long, ByteArray>(DOCUMENTREPRESENTATION_INGESTION_TOPIC, doc.path.hashCode().toLong(), out))
+                ingestionProducer.send(ProducerRecord<Long, ByteArray>(DOCUMENTREPRESENTATION_INGESTION_TOPIC, doc.path.hashCode().toLong(), out))
             }
             ingestionChannel.close()
 
@@ -237,7 +265,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, applicationI
 
         val topology = builder.build()
 
-        println(topology.describe().toString())
+        //println(topology.describe().toString())
         val streams = KafkaStreams(topology, streamsConfig)
         return streams
     }

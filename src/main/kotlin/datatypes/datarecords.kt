@@ -11,6 +11,9 @@ import participants.PipelineIngestor
 @Serializable
 data class Metadata(val values:Map<String,String> = mutableMapOf(), val createdBy: String="")
 
+/**
+ * describes a representation of a document
+ */
 @Serializable
 data class DocumentRepresentation(val path:String="",
                                   var createdBy: String=NoOpIngestor().name)

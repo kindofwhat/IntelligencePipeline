@@ -54,8 +54,10 @@ How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens
 ## V0.1: make it available on Github
 
 ### Open
+- [ ]  Finer Domain Model
 - [ ]  Quickstart Guide
 - [ ]  Good test coverage
+- [ ]  robust exception handling: test with a rogue MetadataProducer
 - [ ]  Basic result reporting
 - [ ]  make it available online somewhere
 

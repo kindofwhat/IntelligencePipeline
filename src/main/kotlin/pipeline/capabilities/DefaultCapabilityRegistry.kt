@@ -3,18 +3,22 @@ package pipeline.capabilities
 import datatypes.DataRecord
 import kotlin.reflect.KClass
 import kotlin.reflect.full.allSuperclasses
+import kotlin.reflect.full.createType
+import kotlin.reflect.full.isSubtypeOf
 
 class DefaultCapabilityRegistry: CapabilityRegistry, CapabilityLookup, CapabilityLookupStrategy {
     private var registry = mutableMapOf<String, Set<Capability<*>>>()
     /**
      * returns the first capability if found
      */
-    override fun <T> lookup(capability: String, dataRecord: DataRecord, clazz: Class<T>): T {
+    override fun <T> lookup(capability: String, dataRecord: DataRecord, clazz: Class<T>): T? {
         return requestCapability(capability).
                 map { cap ->  cap.retrieve(capability, dataRecord)}
                 .filter { result -> result != null }
-                .filter { result -> result!!::class.java == clazz }
-                .map { result -> result as T }.first()
+                .filter { result -> clazz.isAssignableFrom(result!!::class.java)}
+                .map { result -> result as T? }
+                .firstOrNull()
+
     }
 
     override fun requestCapability(name: String): Set<Capability<*>> {

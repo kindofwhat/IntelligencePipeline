@@ -9,8 +9,8 @@ import edu.stanford.nlp.pipeline.Annotation
 import edu.stanford.nlp.pipeline.StanfordCoreNLP
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations
 import edu.stanford.nlp.trees.TreeCoreAnnotations
-import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.SendChannel
+import kotlinx.io.InputStream
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JSON
 import org.apache.commons.codec.digest.DigestUtils
@@ -22,7 +22,7 @@ import pipeline.capabilities.*
 import java.io.File
 import java.util.*
 import org.apache.tika.language.LanguageIdentifier
-import org.apache.tika.language.detect.LanguageDetector
+import util.log
 
 
 class HashMetadataProducer() : MetadataProducer {
@@ -92,7 +92,18 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
 
 }
 
-class TikaMetadataProducer() : MetadataProducer, SimpleTextCapability, HtmlTextCapability,LanguageDetectionCapability {
+class FileInputStreamProvider:BinaryCapability {
+    override fun retrieve(name: String, dataRecord: DataRecord): InputStream? {
+        val file = File(dataRecord.representation.path)
+        if (file.isFile && file.canRead()) {
+            return file.inputStream()
+        }
+        return null
+    }
+}
+
+@RequiresCapabilities(originalFileContent)
+class TikaMetadataProducer(val lookup: CapabilityLookupStrategy) : MetadataProducer, SimpleTextCapability, HtmlTextCapability,LanguageDetectionCapability {
 
     override fun  retrieve(name:String, dataRecord: DataRecord): String {
         val metadata=metadataFor(dataRecord)
@@ -112,10 +123,14 @@ class TikaMetadataProducer() : MetadataProducer, SimpleTextCapability, HtmlTextC
         val contentHandler = ToTextContentHandler()
         val htmlContentHandler = ToHTMLContentHandler()
         val metadata = org.apache.tika.metadata.Metadata()
-        val file = File(record.representation.path)
-        if (file.isFile && file.canRead()) {
+
+
+        var inputStream = lookup.lookup(originalFileContent, record, InputStream::class.java)
+
+        //val file = File(record.representation.path)
+        if (inputStream != null) {
             val metadataPipeline = mutableMapOf<String, String>()
-            parser.parse(file.inputStream(), contentHandler, metadata)
+            parser.parse(inputStream, contentHandler, metadata)
 
             metadataPipeline.put("text", contentHandler.toString())
             /*
@@ -132,11 +147,16 @@ class TikaMetadataProducer() : MetadataProducer, SimpleTextCapability, HtmlTextC
                 //TODO: multivalued
                 metadataPipeline.put(name, metadata.get(name))
             }
-            parser.parse(file.inputStream(), htmlContentHandler, metadata)
+            //have to parse it again (!)
+
+            inputStream = lookup.lookup(originalFileContent, record, InputStream::class.java)
+            parser.parse(inputStream, htmlContentHandler, metadata)
             metadataPipeline.put("html", htmlContentHandler.toString())
             return Metadata(metadataPipeline, name)
+        } else {
+            log("No inputstream found for " + record)
+            return Metadata()
         }
-        return Metadata()
     }
 }
 
@@ -163,7 +183,7 @@ class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,
         val text:String? =lookup.lookup(simpleText,record,String::class.java)
         if(StringUtils.isNotEmpty( text)) {
             var language = lookup.lookup(languageDetection,record,String::class.java)
-            if(!allowedLanguages.contains(language)) {
+            if(language==null || !allowedLanguages.contains(language)) {
                 language = "de"
             }
             val req = RequestDocuments (listOf(RequestDocument("1", language, text?:"")))

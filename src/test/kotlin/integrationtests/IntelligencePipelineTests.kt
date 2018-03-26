@@ -4,13 +4,12 @@ import datatypes.DataRecord
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.serialization.json.JSON
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.Consumed
 import org.apache.kafka.streams.KafkaStreams
-import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster
-import org.apache.kafka.streams.kstream.KTable
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.state.QueryableStoreTypes
 import org.junit.*
@@ -22,10 +21,10 @@ import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_
 import pipeline.IntelligencePipeline.Companion.DATARECORD_TOPIC
 import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_TOPIC
 import pipeline.serialize.KotlinSerde
+import pipeline.serialize.serialize
 import java.io.File
+import java.nio.charset.Charset
 import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.*
 
 
@@ -55,12 +54,15 @@ class IntelligencePipelineTests {
             val pipeline = IntelligencePipeline(hostUrl, stateDir,name)
             ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
             producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
+            pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
+            pipeline.registerSideEffect("filewriter", {key, value ->
+                File("out/$key.json").bufferedWriter().use { out -> out.write(JSON(indented = true).stringify(value)) }
+            } )
             return pipeline
         }
 
         @AfterClass @JvmStatic
         fun shutdown() {
-            val mainThread = Thread.currentThread()
             Runtime.getRuntime().addShutdownHook(object : Thread() {
                 override fun run() {
                     try {
@@ -68,13 +70,23 @@ class IntelligencePipelineTests {
                         //pipeline?.stop()
                         deleteDir(File(stateDir))
                         if(embeddedMode) {
-                            cluster.waitForRemainingTopics(1000)
-                            cluster.deleteTopicsAndWait(1000, *arrayOf(DOCUMENTREPRESENTATION_TOPIC, DOCUMENTREPRESENTATION_INGESTION_TOPIC, METADATA_TOPIC, DATARECORD_TOPIC))
+                            //dangerous!!!
+                            val tempDir = File(System.getProperty("java.io.tmpdir"))
+
+                            tempDir.listFiles().filter { file ->
+                                file.name.startsWith("kafka") || file.name.startsWith("junit") || file.name.startsWith("librocksdbjni") }
+                                    .forEach { file ->
+                                        println("deleting " + file.absolutePath)
+                                        deleteDir(file)
+                                    }
+                            //doesn't work, at least on windows
+
+                            //cluster.waitForRemainingTopics(1000)
+                            //cluster.deleteTopicsAndWait(1000, *arrayOf(DOCUMENTREPRESENTATION_TOPIC, DOCUMENTREPRESENTATION_INGESTION_TOPIC, METADATA_TOPIC, DATARECORD_TOPIC))
                         }
                         println("done, kthxbye")
                     }catch (t:Throwable)  {
                         println("Was not able to delete topics " + t)
-
                     }
                 }
             })
@@ -135,7 +147,6 @@ class IntelligencePipelineTests {
         val view = createPipelineAndRunWithResults("testDirectoryCrawlAndHashCreation",
                 listOf(DirectoryIngestor("src/test/resources")),
                 listOf(HashMetadataProducer()))
-        println(view)
         assertEquals(4, view.size)
         assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name} }.size)
     }
@@ -143,43 +154,56 @@ class IntelligencePipelineTests {
     @Test
     @Throws(Exception::class)
     fun testDirectoryCrawlAndTika() {
-        val view = createPipelineAndRunWithResults("testDirectoryCrawlAndTika",
-                listOf(DirectoryIngestor("src/test/resources")),
-                listOf(TikaMetadataProducer()))
+        val name = "testDirectoryCrawlAndTika"
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("src/test/resources")), emptyList<MetadataProducer>())
+
+        pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
+
+        pipeline.registry.register(FileInputStreamProvider())
+
+        val view = runPipeline(pipeline,name)
         assertEquals(4, view.size)
-        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer().name} }.size)
+        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer(pipeline.registry).name} }.size)
+        pipeline.stop()
     }
 
     private fun createPipelineAndRunWithResults(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): List<DataRecord> {
         val pipeline = createPipeline(name,ingestors,producers)
-        val view = runPipeline(pipeline)
+        val view = runPipeline(pipeline,name)
+        pipeline.stop()
         return view
     }
 
-    private fun runPipeline(pipeline: IntelligencePipeline): List<DataRecord> {
+    private fun runPipeline(pipeline: IntelligencePipeline, storeName: String): List<DataRecord> {
         var view = emptyList<DataRecord>()
         launch {
             pipeline.run()
         }
         runBlocking {
-            view = createDataRecords("testDirectoryCrawlAndTika")
+            view = createDataRecords(storeName)
         }
         return view
     }
 
-    private suspend fun createDataRecords(storeName: String): List<DataRecord> {
+    private suspend fun createDataRecords(name: String): List<DataRecord> {
         val builder = StreamsBuilder()
         val table = builder.table<Long, DataRecord>(DATARECORD_TOPIC,
                 Consumed.with(Serdes.LongSerde(), DataRecordSerde()),
-                Materialized.`as`(storeName))
-        val streams = KafkaStreams(builder.build(), streamsConfig)
+                Materialized.`as`(name))
+
+        val myStreamConfig = Properties()
+        myStreamConfig.putAll(streamsConfig)
+        myStreamConfig.put("application.id", "stream_" + name)
+
+        val streams = KafkaStreams(builder.build(), myStreamConfig)
+        streams.cleanUp()
         streams.start()
-        delay(4000)
+        delay(6000)
         val store = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
+
         val view = store.all().asSequence().toList()
         streams.close()
-        delay(1000)
-        streams.cleanUp()
         return view.map { keyValue ->  keyValue.value}
     }
 }

@@ -1,8 +1,9 @@
 package pipeline.capabilities
 
 import datatypes.DataRecord
+import kotlinx.io.InputStream
 
-const val fullText = "fullText"
+const val originalFileContent = "originalFileContent"
 const val metadata = "metadata"
 const val simpleText = "simpleText"
 const val htmlText = "htmlText"
@@ -19,6 +20,12 @@ annotation class HasCapabilities(vararg val name:String)
 interface Capability <T>{
     fun retrieve(name:String, dataRecord: DataRecord):T
 }
+
+@HasCapabilities(originalFileContent)
+interface BinaryCapability: Capability<InputStream?>  {
+    override fun retrieve(name:String, dataRecord: DataRecord): InputStream?
+}
+
 
 interface FullTextCapability: Capability<String>  {
     override fun retrieve(name:String, dataRecord: DataRecord): String
@@ -41,5 +48,5 @@ interface CapabilityLookup {
 }
 
 interface CapabilityLookupStrategy {
-    fun <T> lookup(capability: String, dataRecord: DataRecord, clazz:Class<T>): T
+    fun <T> lookup(capability: String, dataRecord: DataRecord, clazz:Class<T>): T?
 }
