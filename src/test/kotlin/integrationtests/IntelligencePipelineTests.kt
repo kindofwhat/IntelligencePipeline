@@ -14,6 +14,7 @@ import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.state.QueryableStoreTypes
 import org.junit.*
 import org.junit.Assert.assertEquals
+import participants.file.*
 import participants.*
 import pipeline.IntelligencePipeline
 import pipeline.IntelligencePipeline.Companion.METADATA_TOPIC
@@ -21,9 +22,7 @@ import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_
 import pipeline.IntelligencePipeline.Companion.DATARECORD_TOPIC
 import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_TOPIC
 import pipeline.serialize.KotlinSerde
-import pipeline.serialize.serialize
 import java.io.File
-import java.nio.charset.Charset
 import java.nio.file.Files
 import java.util.*
 
@@ -58,6 +57,15 @@ class IntelligencePipelineTests {
             pipeline.registerSideEffect("filewriter", {key, value ->
                 File("out/$key.json").bufferedWriter().use { out -> out.write(JSON(indented = true).stringify(value)) }
             } )
+
+
+            pipeline.registry.register(FileOriginalContentCapability())
+            pipeline.registry.register(FileTxtOutputProvider("out/test"))
+            pipeline.registry.register(FileHtmlOutputProvider("out/test"))
+            pipeline.registry.register(FileHtmlStringProvider("out/test"))
+            pipeline.registry.register(FileTxtStringProvider("out/test"))
+
+
             return pipeline
         }
 
@@ -143,12 +151,21 @@ class IntelligencePipelineTests {
 
     @Test
     @Throws(Exception::class)
-    fun testDirectoryCrawlAndHashCreation() {
-        val view = createPipelineAndRunWithResults("testDirectoryCrawlAndHashCreation",
-                listOf(DirectoryIngestor("src/test/resources")),
-                listOf(HashMetadataProducer()))
+    fun testStanfordNlpParser() {
+        val name = "testStanfordNlpParser"
+
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("src/test/resources")), emptyList<MetadataProducer>())
+
+        val nlpParserProducer = StanfordNlpParserProducer(pipeline.registry)
+        val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)
+        pipeline.registerMetadataProducer(nlpParserProducer)
+        pipeline.registerMetadataProducer(tikaMetadataProducer)
+
+        val view = runPipeline(pipeline,name)
         assertEquals(4, view.size)
-        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name} }.size)
+        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == nlpParserProducer.name} }.size)
+        pipeline.stop()
     }
 
     @Test
@@ -160,7 +177,7 @@ class IntelligencePipelineTests {
 
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
 
-        pipeline.registry.register(FileInputStreamProvider())
+        pipeline.registry.register(FileOriginalContentCapability())
 
         val view = runPipeline(pipeline,name)
         assertEquals(4, view.size)
@@ -199,7 +216,7 @@ class IntelligencePipelineTests {
         val streams = KafkaStreams(builder.build(), myStreamConfig)
         streams.cleanUp()
         streams.start()
-        delay(6000)
+        delay(250000)
         val store = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
 
         val view = store.all().asSequence().toList()

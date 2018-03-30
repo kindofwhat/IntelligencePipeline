@@ -15,14 +15,14 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JSON
 import org.apache.commons.codec.digest.DigestUtils
 import org.apache.commons.lang.StringUtils
+import org.apache.tika.language.LanguageIdentifier
 import org.apache.tika.parser.AutoDetectParser
 import org.apache.tika.sax.ToHTMLContentHandler
 import org.apache.tika.sax.ToTextContentHandler
 import pipeline.capabilities.*
 import java.io.File
+import java.io.OutputStream
 import java.util.*
-import org.apache.tika.language.LanguageIdentifier
-import util.log
 
 
 class HashMetadataProducer() : MetadataProducer {
@@ -38,19 +38,20 @@ class HashMetadataProducer() : MetadataProducer {
     }
 }
 
-@RequiresCapabilities(simpleText)
+@RequiresCapabilities(simpleTextIn)
 class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : CapabilityLookupStrategyMetadataProducer<String>(lookup) {
     override val name = "stanford-nlp"
     val props = Properties()
     init {
-        props.put("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
+//        props.put("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
+        props.put("annotators", "tokenize, ssplit, pos, lemma, ner")
     }
     val pipeline = StanfordCoreNLP(props)
 
     override fun metadataFor(record: DataRecord): Metadata {
         // creates a StanfordCoreNLP object, with POS tagging, lemmatization, NER, parsing, and coreference resolution
         val metadata = mutableMapOf<String, String>()
-        val text = lookup.lookup(simpleText, record, String::class.java)
+        val text = lookup.lookup(simpleTextIn, record, String::class.java)
         //val text:String? = record.meta.firstOrNull { metadata -> metadata.createdBy == TikaMetadataProducer().name }?.values?.get("text")
         if(StringUtils.isNotEmpty(text)) {
 
@@ -76,11 +77,13 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
 
                 // this is the parse tree of the current sentence
                 val tree = sentence.get(TreeCoreAnnotations.TreeAnnotation::class.java)
-                metadata.put("tree_$i", tree.toString())
+                if(tree != null)
+                    metadata.put("tree_$i", tree.toString())
 
                 // this is the Stanford dependency graph of the current sentence
                 val dependencies = sentence.get(SemanticGraphCoreAnnotations.EnhancedPlusPlusDependenciesAnnotation::class.java)
-                metadata.put("dependencies_$i", dependencies.toCompactString(true))
+                if(dependencies != null)
+                    metadata.put("dependencies_$i", dependencies.toCompactString(true))
             }
             return Metadata(values=metadata,createdBy = name)
 
@@ -92,75 +95,81 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
 
 }
 
-class FileInputStreamProvider:BinaryCapability {
-    override fun retrieve(name: String, dataRecord: DataRecord): InputStream? {
-        val file = File(dataRecord.representation.path)
-        if (file.isFile && file.canRead()) {
-            return file.inputStream()
+
+@RequiresCapabilities(originalContentIn,htmlTextOut, simpleTextOut)
+/**
+ * Does (too) many things at once:
+ * <ul>
+ *     <li>language detection</li>
+ *     <li>metadata extraction</li>
+ *     <li>creates .txt versions of all files</li>
+ *     <li>creates .html version of all files</li>
+ *     </ul>
+ *
+ *     These functionalities might easily be spread out over 4 classes
+ */
+class TikaMetadataProducer(val lookup: CapabilityLookupStrategy) :
+        MetadataProducer,
+        LanguageDetectionCapability {
+    override val name = "tika-metadata"
+
+
+    override fun  execute(name:String, dataRecord: DataRecord): String? {
+        return dataRecord.meta.filter { it.createdBy == name }.firstOrNull()?.values?.get("lang")?:extractLang(dataRecord)
+    }
+
+    fun extractLang(record: DataRecord):String? {
+        val text =  lookup.lookup(simpleTextIn, record, String::class.java)
+        if(StringUtils.isNotEmpty(text)) {
+            val language = LanguageIdentifier(text)?.language
+            return language
         }
         return null
     }
-}
 
-@RequiresCapabilities(originalFileContent)
-class TikaMetadataProducer(val lookup: CapabilityLookupStrategy) : MetadataProducer, SimpleTextCapability, HtmlTextCapability,LanguageDetectionCapability {
-
-    override fun  retrieve(name:String, dataRecord: DataRecord): String {
-        val metadata=metadataFor(dataRecord)
-        var result = ""
-        when(name) {
-            simpleText -> result = metadata.values.get("text")?:""
-            htmlText -> result = metadata.values.get("html")?:""
-            languageDetection -> result = metadata.values.get("lang")?:""
-        }
-        return result
-    }
-
-    override val name = "tika-metadata"
 
     override fun metadataFor(record: DataRecord): Metadata {
         val parser = AutoDetectParser()
-        val contentHandler = ToTextContentHandler()
-        val htmlContentHandler = ToHTMLContentHandler()
-        val metadata = org.apache.tika.metadata.Metadata()
+        val metadataPipeline = mutableMapOf<String, String>()
 
 
-        var inputStream = lookup.lookup(originalFileContent, record, InputStream::class.java)
+        var inputStream = lookup.lookup(originalContentIn, record, InputStream::class.java)
+        var outputStream =  lookup.lookup(simpleTextOut, record, OutputStream::class.java)
 
-        //val file = File(record.representation.path)
-        if (inputStream != null) {
-            val metadataPipeline = mutableMapOf<String, String>()
-            parser.parse(inputStream, contentHandler, metadata)
+        //extract fulltext
+        if (inputStream != null && outputStream != null) {
+            inputStream.use { input ->
+                outputStream.use { out ->
+                    val contentHandler = ToTextContentHandler(out, "utf-8")
+                    val metadata = org.apache.tika.metadata.Metadata()
+                    parser.parse(input, contentHandler, metadata)
+                    metadata.set("lang", extractLang(record))
 
-            metadataPipeline.put("text", contentHandler.toString())
-            /*
-            val ld = LanguageDetector.getDefaultLanguageDetector()
-            ld.addText(metadata.get("text"))
-            if(ld.hasEnoughText()) {
-                metadataPipeline.set("lang", ld.detect().language)
-
-            }*/
-
-            val language = LanguageIdentifier(metadataPipeline.get("text")).language
-            metadata.set("lang", language)
-            metadata.names().forEach { name ->
-                //TODO: multivalued
-                metadataPipeline.put(name, metadata.get(name))
+                }
             }
-            //have to parse it again (!)
-
-            inputStream = lookup.lookup(originalFileContent, record, InputStream::class.java)
-            parser.parse(inputStream, htmlContentHandler, metadata)
-            metadataPipeline.put("html", htmlContentHandler.toString())
-            return Metadata(metadataPipeline, name)
-        } else {
-            log("No inputstream found for " + record)
-            return Metadata()
         }
+
+        inputStream = lookup.lookup(originalContentIn, record, InputStream::class.java)
+        outputStream =  lookup.lookup(htmlTextOut, record, OutputStream::class.java)
+        if (inputStream != null && outputStream != null) {
+            inputStream.use { input ->
+                outputStream.use { out ->
+                    val contentHandler = ToHTMLContentHandler(out, "utf-8")
+                    val metadata = org.apache.tika.metadata.Metadata()
+                    parser.parse(input, contentHandler, metadata)
+                    metadata.names().forEach { name ->
+                        //TODO: multivalued
+                        metadataPipeline.put(name, metadata.get(name))
+                    }
+                }
+            }
+        }
+        if(metadataPipeline.size>0)  return Metadata(metadataPipeline, name)
+        else return Metadata()
     }
 }
 
-@RequiresCapabilities(simpleText, languageDetection)
+@RequiresCapabilities(simpleTextIn, languageDetection)
 class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,val lookup: CapabilityLookupStrategy):CapabilityLookupStrategyMetadataProducer<String>(lookup) {
     override val name = "azure_cognitive_service"
 
@@ -180,7 +189,7 @@ class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,
 
 
     override fun metadataFor(record: DataRecord): Metadata {
-        val text:String? =lookup.lookup(simpleText,record,String::class.java)
+        val text:String? =lookup.lookup(simpleTextIn,record,String::class.java)
         if(StringUtils.isNotEmpty( text)) {
             var language = lookup.lookup(languageDetection,record,String::class.java)
             if(language==null || !allowedLanguages.contains(language)) {

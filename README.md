@@ -64,6 +64,7 @@ How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens
 ### Done
 - [x] Participiants, Capabilities and requirements
 - [x] check that it's running with local cluster
+- [x] Keep represenation off kafka (simple file handling)
 
 ## V0.2: Check all use cases with Kafka
 
@@ -72,6 +73,8 @@ How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens
 - [ ] IP can be rescheduled
 - [ ] Intelligent reprocessing of Metadata
 - [ ] Basic GUI
+- [ ] coroutines for MetadataProducers
+
 
 ### Done
 

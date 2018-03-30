@@ -3,8 +3,6 @@ package pipeline.capabilities
 import datatypes.DataRecord
 import kotlin.reflect.KClass
 import kotlin.reflect.full.allSuperclasses
-import kotlin.reflect.full.createType
-import kotlin.reflect.full.isSubtypeOf
 
 class DefaultCapabilityRegistry: CapabilityRegistry, CapabilityLookup, CapabilityLookupStrategy {
     private var registry = mutableMapOf<String, Set<Capability<*>>>()
@@ -13,12 +11,11 @@ class DefaultCapabilityRegistry: CapabilityRegistry, CapabilityLookup, Capabilit
      */
     override fun <T> lookup(capability: String, dataRecord: DataRecord, clazz: Class<T>): T? {
         return requestCapability(capability).
-                map { cap ->  cap.retrieve(capability, dataRecord)}
+                map { cap ->  cap.execute(capability, dataRecord)}
                 .filter { result -> result != null }
                 .filter { result -> clazz.isAssignableFrom(result!!::class.java)}
                 .map { result -> result as T? }
                 .firstOrNull()
-
     }
 
     override fun requestCapability(name: String): Set<Capability<*>> {

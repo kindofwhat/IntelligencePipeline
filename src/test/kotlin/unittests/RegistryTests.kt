@@ -6,27 +6,27 @@ import pipeline.capabilities.*
 
 @HasCapabilities("test1")
 class TestCapabilty1:Capability<String> {
-    override fun retrieve(name:String, dataRecord: DataRecord): String {
+    override fun execute(name:String, dataRecord: DataRecord): String {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 }
 
 @HasCapabilities("test2")
 class TestCapabilty2:Capability<String> {
-    override fun retrieve(name:String, dataRecord: DataRecord): String {
+    override fun execute(name:String, dataRecord: DataRecord): String {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 }
 
 @HasCapabilities("test1")
 class TestCapabilty1Int:Capability<Int> {
-    override fun retrieve(name:String, dataRecord: DataRecord): Int {
+    override fun execute(name:String, dataRecord: DataRecord): Int {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 }
 
-class TestLanguageDetectionCapability:LanguageDetectionCapability,SimpleTextCapability {
-    override fun retrieve(name: String, dataRecord: DataRecord): String {
+class TestLanguageDetectionCapabilityIn:LanguageDetectionCapability {
+    override fun execute(name: String, dataRecord: DataRecord): String {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 }
@@ -67,10 +67,10 @@ class RegistryTests {
     @Test
     fun testIndirectAnnotations() {
         val registry=DefaultCapabilityRegistry()
-        registry.register(TestLanguageDetectionCapability())
+        registry.register(TestLanguageDetectionCapabilityIn())
         assert(registry.requestCapability(languageDetection).size == 1)
-        assert(registry.requestCapability(simpleText).size == 1)
-        assert(registry.requestCapability(htmlText).size == 1)
+        assert(registry.requestCapability(simpleTextIn).size == 1)
+        assert(registry.requestCapability(htmlTextIn).size == 0)
     }
 
 }

@@ -23,3 +23,4 @@ data class DataRecord(val name: String="",
                       val representation: DocumentRepresentation= DocumentRepresentation(),
                       val additionalRepresentations: Set<DocumentRepresentation> = mutableSetOf(),
                       val meta: Set<Metadata> = mutableSetOf())
+

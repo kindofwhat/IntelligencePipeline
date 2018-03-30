@@ -2,12 +2,20 @@ package pipeline.capabilities
 
 import datatypes.DataRecord
 import kotlinx.io.InputStream
+import participants.PipelineSideEffect
+import java.io.OutputStream
+import java.io.Writer
 
-const val originalFileContent = "originalFileContent"
-const val metadata = "metadata"
-const val simpleText = "simpleText"
-const val htmlText = "htmlText"
+
 const val languageDetection = "languageDetection"
+
+const val originalContentIn = "originalContentIn"
+const val simpleTextIn = "simpleTextIn"
+const val htmlTextIn = "htmlTextIn"
+
+const val textOut = "textOut"
+const val simpleTextOut = "simpleTextOut"
+const val htmlTextOut = "htmlTextOut"
 
 @Target(AnnotationTarget.CLASS, AnnotationTarget.VALUE_PARAMETER)
 @MustBeDocumented
@@ -18,25 +26,21 @@ annotation class RequiresCapabilities(vararg val name:String)
 annotation class HasCapabilities(vararg val name:String)
 
 interface Capability <T>{
-    fun retrieve(name:String, dataRecord: DataRecord):T
+    fun execute(name:String, dataRecord: DataRecord): T
 }
 
-@HasCapabilities(originalFileContent)
-interface BinaryCapability: Capability<InputStream?>  {
-    override fun retrieve(name:String, dataRecord: DataRecord): InputStream?
-}
+@HasCapabilities(originalContentIn) interface OriginalContentCapability: Capability<InputStream?>
+
+interface FullTextCapabilityIn: Capability<String?>
+@HasCapabilities(simpleTextIn) interface TxtTextCapabilityIn: FullTextCapabilityIn
+@HasCapabilities(htmlTextIn) interface HtmlTextCapabilityIn: FullTextCapabilityIn
+
+interface TextCapabilityOut: Capability<OutputStream?>
+@HasCapabilities(simpleTextOut) interface TxtTextCapabilityOut: TextCapabilityOut
+@HasCapabilities(htmlTextOut) interface HtmlCapabilityOut: TextCapabilityOut
 
 
-interface FullTextCapability: Capability<String>  {
-    override fun retrieve(name:String, dataRecord: DataRecord): String
-}
-@HasCapabilities(simpleText)
-interface SimpleTextCapability: FullTextCapability
-@HasCapabilities(htmlText)
-interface HtmlTextCapability: FullTextCapability
-@HasCapabilities(languageDetection)
-interface LanguageDetectionCapability:  Capability<String>
-
+@HasCapabilities(languageDetection) interface LanguageDetectionCapability:  Capability<String?>
 
 
 interface CapabilityRegistry {
