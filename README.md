@@ -54,7 +54,7 @@ How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens
 ## V0.1: make it available on Github
 
 ### Open
-- [ ]  Finer Domain Model
+- [ ]  Finer Domain Model: Sentences, Token, etc
 - [ ]  Quickstart Guide
 - [ ]  Good test coverage
 - [ ]  robust exception handling: test with a rogue MetadataProducer
@@ -70,6 +70,8 @@ How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens
 
 ### Open
 - [ ] Multiple IP in parallel
+- [ ] Ingestion is on schedule
+- [ ] Large file strategy: many metadata producers take too long, e.g. stanfordnlp => tokenize this
 - [ ] IP can be rescheduled
 - [ ] Intelligent reprocessing of Metadata
 - [ ] Basic GUI
