@@ -118,7 +118,11 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                 .filter { key, value -> !value.meta.any { metadata ->
                     metadata.createdBy == prod.name } }
                 .mapValues { value ->
-                    prod.metadataFor(value)
+                    val job= async {
+                        prod.metadataFor(value)
+
+                    }
+                    runBlocking { job.await() }
                 }.filter { key, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.values.isNotEmpty()

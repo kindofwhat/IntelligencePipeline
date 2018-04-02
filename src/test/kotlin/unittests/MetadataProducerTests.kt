@@ -2,6 +2,7 @@ package unittests
 
 import datatypes.DataRecord
 import datatypes.DocumentRepresentation
+import kotlinx.coroutines.experimental.runBlocking
 import org.junit.Ignore
 import org.junit.Test
 import participants.AzureCognitiveServicesMetadataProducer
@@ -33,7 +34,7 @@ class MetadataProducerTests {
         val dataRecord = DataRecord(name = "testDataRecord",
                 representation = DocumentRepresentation("$pathIn/test3.docx"))
 //                representation = DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
-        val metadata = handler.metadataFor(dataRecord)
+        val metadata = runBlocking { handler.metadataFor(dataRecord) }
         println(metadata)
         assert(metadata.values.size>0)
         assert(textIn.execute("", dataRecord) != null)
@@ -45,7 +46,7 @@ class MetadataProducerTests {
         val dataRecord = DataRecord(name = "testDataRecord",
                 representation = DocumentRepresentation("$pathIn/test3.docx"))
 //                representation = DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
-        val metadata = handler.metadataFor(dataRecord)
+        val metadata =  runBlocking { handler.metadataFor(dataRecord) }
         println(metadata)
         assert(metadata.values.size>0)
         assert(textIn.execute("", dataRecord) != null)
@@ -59,7 +60,7 @@ class MetadataProducerTests {
         val dataRecord = DataRecord(name = "testDataRecord",
 //                representation = DocumentRepresentation("$pathIn/test3.docx"))
                 representation = DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
-        val metadata = handler.metadataFor(dataRecord)
+        val metadata =  runBlocking { handler.metadataFor(dataRecord) }
         println(metadata)
         assert(metadata.values.size>0)
         assert(textIn.execute("", dataRecord) != null)

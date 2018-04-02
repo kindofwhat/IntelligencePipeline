@@ -28,7 +28,7 @@ import java.util.*
 class HashMetadataProducer() : MetadataProducer {
     override val name = "hash"
 
-    override fun metadataFor(record: DataRecord): Metadata {
+    override suspend fun metadataFor(record: DataRecord): Metadata {
         val file = File(record.representation.path)
         if (file.isFile && file.canRead()) {
             val dig = DigestUtils.shaHex(file.inputStream())
@@ -48,7 +48,7 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
     }
     val pipeline = StanfordCoreNLP(props)
 
-    override fun metadataFor(record: DataRecord): Metadata {
+    override suspend fun metadataFor(record: DataRecord): Metadata {
         // creates a StanfordCoreNLP object, with POS tagging, lemmatization, NER, parsing, and coreference resolution
         val metadata = mutableMapOf<String, String>()
         val text = lookup.lookup(simpleTextIn, record, String::class.java)
@@ -128,7 +128,7 @@ class TikaMetadataProducer(val lookup: CapabilityLookupStrategy) :
     }
 
 
-    override fun metadataFor(record: DataRecord): Metadata {
+    override suspend fun metadataFor(record: DataRecord): Metadata {
         val parser = AutoDetectParser()
         val metadataPipeline = mutableMapOf<String, String>()
 
@@ -188,7 +188,7 @@ class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,
     data class ResponseDocuments(val documents:List<ResponseDocument>, val errors: List<String> = arrayListOf())
 
 
-    override fun metadataFor(record: DataRecord): Metadata {
+    override suspend fun metadataFor(record: DataRecord): Metadata {
         val text:String? =lookup.lookup(simpleTextIn,record,String::class.java)
         if(StringUtils.isNotEmpty( text)) {
             var language = lookup.lookup(languageDetection,record,String::class.java)

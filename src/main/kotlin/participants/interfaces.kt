@@ -36,7 +36,7 @@ typealias MetadataProducerF = (value:DataRecord) -> Metadata
  * creates a MetaData for a DataRecord
  */
 interface MetadataProducer : PipelineParticipant {
-    fun metadataFor(record: DataRecord): Metadata
+    suspend fun metadataFor(record: DataRecord): Metadata
 }
 
 abstract class CapabilityLookupStrategyMetadataProducer<T>(val strategy: CapabilityLookupStrategy):MetadataProducer

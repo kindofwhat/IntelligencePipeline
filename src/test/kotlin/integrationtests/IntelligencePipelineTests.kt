@@ -216,7 +216,7 @@ class IntelligencePipelineTests {
         val streams = KafkaStreams(builder.build(), myStreamConfig)
         streams.cleanUp()
         streams.start()
-        delay(250000)
+        delay(8000)
         val store = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
 
         val view = store.all().asSequence().toList()
