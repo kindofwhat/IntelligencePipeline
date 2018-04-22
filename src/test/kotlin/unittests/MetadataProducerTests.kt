@@ -14,7 +14,7 @@ import pipeline.capabilities.DefaultCapabilityRegistry
 class MetadataProducerTests {
     val registry= DefaultCapabilityRegistry()
 
-    val pathIn = "src/test/resources"
+    val pathIn = "src/test/resources/testresources"
     val pathOut = "out"
 
     val htmlIn = FileHtmlStringProvider(pathOut)

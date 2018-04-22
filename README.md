@@ -47,6 +47,22 @@ pipeline?.registerIngestor(DirectoryIngestor("src/test/resources"))
 ## Domain Design: Inner structure of documents
 How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens) be designed in a streaming enivonrment?
 
+==> at the moment: ChunkProducer
+
+==> do not keep the whole text within kafka as one block, but use messages to describe the structure (e.g. "ADD SENTENCE")
+
+## logic of changes to source data and enrichment
+* Use case 1: Two Metadata-Producer produce independent and maybe conflicting data ==> there has to be a possibility to 
+know about those conflicting results and act accordingly (e.g. choose one, or an average)
+* Use case 2: To detect sentence boundary, a ChunkProducer makes an educated guess. 
+Then a human makes some saner choices. Those choices are kept when the document content changes.
+* Use case 3: a quite dump ChunkProducer makes a first pass. Then a better system optimized upon it. This might be usefull 
+for systems where the second, better producer cannot work efficiently with large documents (e.g. StanfordNLP) 
+
+### Solution outlines
+*  give each producer a weight: the higher the more important it is
+
+
 # Notes
 - make sure to set advertised.host.name in the bootstrap config
 

@@ -1,12 +1,12 @@
 package pipeline
 
-import datatypes.DataRecord
-import datatypes.DocumentRepresentation
-import datatypes.Metadata
+import datatypes.*
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.consumeEach
 import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.serialization.json.JSON
+import org.apache.commons.lang.StringUtils
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.Producer
 import org.apache.kafka.clients.producer.ProducerRecord
@@ -16,6 +16,8 @@ import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.Consumed
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.StreamsBuilder
+import org.apache.kafka.streams.kstream.JoinWindows
+import org.apache.kafka.streams.kstream.Joined
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.kstream.Produced
 import participants.*
@@ -33,6 +35,8 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         val DOCUMENTREPRESENTATION_TOPIC = "document-representation"
         val METADATA_TOPIC = "metadata"
         val DATARECORD_TOPIC = "datarecord"
+        val DATARECORD_CONSOLIDATED_TOPIC = "datarecord-consolidated"
+        val CHUNK_TOPIC = "chunk"
     }
 
     val registry=DefaultCapabilityRegistry()
@@ -75,17 +79,45 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
     /**
      * creates an own stream for this producer and starts it
      */
+    fun registerChunkProducer(name:String,chunkProducer: ChunkProducer) {
+        val builder = StreamsBuilder()
+
+        //the generic datarecord stream
+        val datarecordStream =
+                builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
+                        Consumed.with(Serdes.LongSerde(),
+                                KotlinSerde(DataRecord::class.java)))
+
+        //act on the default representation
+        datarecordStream
+                .filter { key, value ->  value != null}
+                .flatMapValues { value: DataRecord -> runBlocking { chunkProducer.chunks(value) }.asIterable() }
+                .to(CHUNK_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(Chunk::class.java)))
+
+        val topology = builder.build()
+
+        val myProp = Properties()
+        myProp.putAll(streamsConfig)
+        myProp.put("application.id", applicationId + "_chunk_" + name)
+        val streams = KafkaStreams(topology, myProp )
+        streams.start()
+
+        subStreams.add(streams)
+    }
+    /**
+     * creates an own stream for this producer and starts it
+     */
     fun registerSideEffect(name:String, sideEffect: PipelineSideEffect) {
         val builder = StreamsBuilder()
 
         //the generic datarecord stream
         val datarecordStream =
-                builder.stream<Long, DataRecord>(DATARECORD_TOPIC,
+                builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
                         Consumed.with(Serdes.LongSerde(),
                                 KotlinSerde(DataRecord::class.java)))
 
         //all MetadataProducers listen on the datarecord topic and produce metadata to the metadata topic
-        datarecordStream.foreach { key, value ->  sideEffect.apply {  }(key, value)}
+        datarecordStream.foreach { key, value ->  sideEffect(key, value)}
 
 
         val topology = builder.build()
@@ -97,7 +129,6 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         streams.start()
 
         subStreams.add(streams)
-
     }
 
     /**
@@ -108,7 +139,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
 
         //the generic datarecord stream
         val datarecordStream =
-                builder.stream<Long, DataRecord>(DATARECORD_TOPIC,
+                builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(DataRecord::class.java)))
 
@@ -118,15 +149,18 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                 .filter { key, value -> !value.meta.any { metadata ->
                     metadata.createdBy == prod.name } }
                 .mapValues { value ->
+                    MetadataEvent(BaseCommand.UPSERT,prod.metadataFor(value))
+/*
                     val job= async {
-                        prod.metadataFor(value)
+                        MetadataEvent(BaseCommand.UPSERT,prod.metadataFor(value))
 
                     }
                     runBlocking { job.await() }
+*/
                 }.filter { key, value ->
                     //TODO: filter out the those that are exactly the same as before!
-                    value.values.isNotEmpty()
-                }.to(METADATA_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(Metadata::class.java)))
+                    value.record.values.isNotEmpty()
+                }.to(METADATA_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(MetadataEvent::class.java)))
 
 
         val topology = builder.build()
@@ -145,7 +179,33 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
     }
 
     fun registerDocumentRepresentationProducer(prod: DocumentRepresentationProducer) {
-        documentRepresentationProducer.add(prod)
+        val builder = StreamsBuilder()
+        //the generic datarecord stream
+        val datarecordStream = builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
+                Consumed.with(Serdes.LongSerde(),
+                        KotlinSerde(DataRecord::class.java)))
+        //all DocRepProducers listen on the datarecord topic and produce new documentrepresentations to the DOCUMENTREPRESENTATION_TOPIC
+        datarecordStream
+                //TODO: add some logic here to retry after a while
+                .filter { key, value -> !value.additionalRepresentations.any { representation -> representation.createdBy == prod.name } }
+                //TODO: filter out the those that are exactly the same as before!
+                .mapValues { datarecord ->
+                    prod.documentRepresentationFor(datarecord)
+                }.filter { key, value ->
+                    //TODO: filter out the those that are exactly the same as before!
+                    StringUtils.isNotEmpty(value.path)
+                }.mapValues { value -> DocumentRepresentationEvent(record = value) }
+                .to(DOCUMENTREPRESENTATION_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DocumentRepresentationEvent::class.java)))
+
+        val topology = builder.build()
+
+        val myProp = Properties()
+        myProp.putAll(streamsConfig)
+        myProp.put("application.id", applicationId + "_document_representation_" + prod.name)
+        val streams = KafkaStreams(topology, myProp )
+        streams.start()
+
+        subStreams.add(streams)
     }
 
     fun registerIngestor(ingestor: PipelineIngestor) {
@@ -155,11 +215,6 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
             ingestor.ingest(ingestionChannel)
             log("done ingestor")
         }
-    }
-
-
-    fun deregisterIngestor(ingestor: PipelineIngestor) {
-        ingestors.remove(ingestor)
     }
 
     fun stop() {
@@ -177,10 +232,80 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
             }
             ingestionChannel.close()
 
-            log("stopping")
+            log(    "stopping")
         }
     }
+    private fun createMainStream(): KafkaStreams {
+        val builder = StreamsBuilder()
+        val ingestionStream = builder.stream<Long, DocumentRepresentation>(DOCUMENTREPRESENTATION_INGESTION_TOPIC,
+                Consumed.with(Serdes.LongSerde(),
+                        KotlinSerde(DocumentRepresentation::class.java)))
 
+        ingestionStream.mapValues { documentRepresentation ->
+            DataRecordEvent(DataRecordCommand.CREATE,DataRecord(representation = documentRepresentation, name = documentRepresentation.path))
+        }.to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
+
+
+        val documentRepresentationEventStream = builder.stream<Long, DocumentRepresentationEvent>(DOCUMENTREPRESENTATION_TOPIC,
+                Consumed.with(Serdes.LongSerde(),
+                        KotlinSerde(DocumentRepresentationEvent::class.java)))
+
+        documentRepresentationEventStream.mapValues { value ->
+            if(value.command==BaseCommand.UPSERT) {
+                DataRecordEvent(DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION, DataRecord(additionalRepresentations = setOf(value.record)))
+            } else{
+                throw Exception("Don't know how to handle $value")
+            }
+        }.to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
+
+
+        val metadataEventStream = builder.stream<Long, MetadataEvent>(METADATA_TOPIC,
+                Consumed.with(Serdes.LongSerde(),
+                        KotlinSerde(MetadataEvent::class.java)))
+
+        metadataEventStream.mapValues { value ->
+            if(value.command==BaseCommand.UPSERT) {
+                DataRecordEvent(DataRecordCommand.UPSERT_METADATA, DataRecord(meta = setOf(value.record)))
+            } else{
+                throw Exception("Don't know how to handle $value")
+            }
+        }.to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
+
+        val dataRecordEventStream = builder.stream<Long, DataRecordEvent>(DATARECORD_TOPIC,
+                Consumed.with(Serdes.LongSerde(),
+                        KotlinSerde(DataRecordEvent::class.java)))
+
+        val dataRecordTable = dataRecordEventStream
+                .groupByKey()
+                .aggregate(
+                        { DataRecord() },
+                        { key, dataRecordEvent, dataRecord ->
+                            if(dataRecordEvent.command == DataRecordCommand.CREATE) {
+                                dataRecord.copy(representation = dataRecordEvent.record.representation, name = dataRecordEvent.record.name)
+                            } else if(dataRecordEvent.command == DataRecordCommand.UPSERT_METADATA) {
+                                dataRecord.copy(meta = dataRecord.meta + dataRecordEvent.record.meta)
+                            } else if(dataRecordEvent.command == DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION) {
+                                dataRecord.copy(additionalRepresentations = dataRecord.additionalRepresentations + dataRecordEvent.record.additionalRepresentations)
+                            } else {
+                                throw Exception("Don't know how to handle $dataRecordEvent")
+                            }
+
+                        },
+                        Materialized.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
+
+        dataRecordTable.toStream().to(DATARECORD_CONSOLIDATED_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
+
+
+
+
+        val topology = builder.build()
+
+        println(topology.describe().toString())
+        val streams = KafkaStreams(topology, streamsConfig)
+        return streams
+    }
+
+/*
     private fun createMainStream(): KafkaStreams {
         val builder = StreamsBuilder()
 
@@ -188,8 +313,12 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         val ingestionStream = builder.stream<Long, DocumentRepresentation>(DOCUMENTREPRESENTATION_INGESTION_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(DocumentRepresentation::class.java)))
+
+
+
+
         //collect & aggregate everything from  documentpresentation/ingestion  to a DataRecord
-        val ingestionDataRecordTable = ingestionStream
+        val ingestionToDataRecordTable = ingestionStream
                 .groupByKey()
                 .aggregate(
                         { DataRecord() },
@@ -210,6 +339,13 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(DocumentRepresentation::class.java)))
 
+        //signal from docrep to metadata. This allows the MetadataProducers to work on metadata topic
+        documentRepresentationStream.mapValues { value ->
+            Metadata(mapOf("stored" to Date().toString(), "createdBy" to value.createdBy, "path" to value.path),
+                    "docrep")
+        }.to(METADATA_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(Metadata::class.java)))
+
+
         //collect & aggregate everything from  documentpresentation/ingestion  to a DataRecord
         val documentRepresentationDataRecordTable = documentRepresentationStream
                 .groupByKey()
@@ -221,9 +357,8 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                         Materialized.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
 
 
-
         //accumulate the DataRecord from ingestion together with those from metadata and those from documentrepresentation
-        val dataRecordAccumulator = builder.stream<Long, Metadata>(METADATA_TOPIC,
+        val metaToDataRecordAggregatorTable = builder.stream<Long, Metadata>(METADATA_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(Metadata::class.java)))
                 .groupByKey()
@@ -234,45 +369,30 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                         },
                         Materialized.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
 
-        dataRecordAccumulator.join(ingestionDataRecordTable,
-                        { meta, document ->
-                            meta.copy(representation = document.representation)
+
+        val ingestionDataRecordJoinTable = metaToDataRecordAggregatorTable.join(ingestionToDataRecordTable,
+                        { thisDataRecord, otherDataRecord ->
+                            thisDataRecord.copy(representation = otherDataRecord.representation)
                         })
                 .toStream().to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
 
-        dataRecordAccumulator.join(documentRepresentationDataRecordTable,
+        val representationsDataRecordJoinTable = metaToDataRecordAggregatorTable.leftJoin(documentRepresentationDataRecordTable,
                         { meta, document ->
-                            meta.copy(additionalRepresentations = document.additionalRepresentations)
+                            if(document != null)  {
+                                meta.copy(additionalRepresentations = document.additionalRepresentations)
+                            } else {
+                                meta
+                            }
                         })
-                .toStream().to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
-
-        //the generic datarecord stream
-        val datarecordStream = builder.stream<Long, DataRecord>(DATARECORD_TOPIC,
-                Consumed.with(Serdes.LongSerde(),
-                        KotlinSerde(DataRecord::class.java)))
-        /*
-
-         val datarecordTable = datarecordStream.groupByKey().windowedBy(SessionWindows.with(10000))
-         datarecordTable.reduce( { old, new -> new })
- */
-        //all DocRepProducers listen on the datarecord topic and produce new documentrepresentations to the DOCUMENTREPRESENTATION_TOPIC
-        documentRepresentationProducer.forEach { producer ->
-            datarecordStream
-                    //TODO: add some logic here to retry after a while
-                    .filter { key, value -> !value.additionalRepresentations.any { representation -> representation.createdBy == producer.name } }
-                    //TODO: filter out the those that are exactly the same as before!
-                    .mapValues { datarecord ->
-                        producer.documentRepresentationFor(datarecord)
-            }.to(DOCUMENTREPRESENTATION_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DocumentRepresentation::class.java)))
-
-        }
+        representationsDataRecordJoinTable.toStream().to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
 
         val topology = builder.build()
 
-        //println(topology.describe().toString())
+        println(topology.describe().toString())
         val streams = KafkaStreams(topology, streamsConfig)
         return streams
     }
+*/
 }
 
 

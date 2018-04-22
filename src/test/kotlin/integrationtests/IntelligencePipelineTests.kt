@@ -1,5 +1,6 @@
 package integrationtests
 
+import datatypes.Chunk
 import datatypes.DataRecord
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
@@ -17,6 +18,8 @@ import org.junit.Assert.assertEquals
 import participants.file.*
 import participants.*
 import pipeline.IntelligencePipeline
+import pipeline.IntelligencePipeline.Companion.CHUNK_TOPIC
+import pipeline.IntelligencePipeline.Companion.DATARECORD_CONSOLIDATED_TOPIC
 import pipeline.IntelligencePipeline.Companion.METADATA_TOPIC
 import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_TOPIC
 import pipeline.IntelligencePipeline.Companion.DATARECORD_TOPIC
@@ -64,6 +67,13 @@ class IntelligencePipelineTests {
             pipeline.registry.register(FileHtmlOutputProvider("out/test"))
             pipeline.registry.register(FileHtmlStringProvider("out/test"))
             pipeline.registry.register(FileTxtStringProvider("out/test"))
+            pipeline.registry.register(FileSimpleTextOutPathCapability("out/test"))
+            pipeline.registry.register(FileHtmlTextOutPathCapability("out/test"))
+
+            pipeline.registerDocumentRepresentationProducer(TikaTxtDocumentRepresentationProducer(pipeline.registry))
+            pipeline.registerDocumentRepresentationProducer(TikaHtmlDocumentRepresentationProducer(pipeline.registry))
+
+            pipeline.registerChunkProducer("sentenceProducer", StanfordNlpSentenceChunkProducer(pipeline.registry))
 
 
             return pipeline
@@ -111,7 +121,7 @@ class IntelligencePipelineTests {
                 cluster.createTopic(DATARECORD_TOPIC)
                  */
                 cluster.start()
-                cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_TOPIC,METADATA_TOPIC,DATARECORD_TOPIC)
+                cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_TOPIC,METADATA_TOPIC,DATARECORD_TOPIC, CHUNK_TOPIC, DATARECORD_CONSOLIDATED_TOPIC)
                 hostUrl = cluster.bootstrapServers()
                 //pipeline = IntelligencePipeline(cluster.bootstrapServers(), stateDir)
                 println("starting embedded kafka cluster with " + cluster.bootstrapServers())
@@ -151,11 +161,27 @@ class IntelligencePipelineTests {
 
     @Test
     @Throws(Exception::class)
+    fun testHashMetadataProducer() {
+        val name = "testHashMetadataProducer"
+
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList())
+
+        pipeline.registerMetadataProducer(HashMetadataProducer())
+
+        val view = runPipeline(pipeline,name)
+        assertEquals(4, view.size)
+        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name} }.size)
+        pipeline.stop()
+    }
+
+    @Test
+    @Throws(Exception::class)
     fun testStanfordNlpParser() {
         val name = "testStanfordNlpParser"
 
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("src/test/resources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
 
         val nlpParserProducer = StanfordNlpParserProducer(pipeline.registry)
         val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)
@@ -173,11 +199,10 @@ class IntelligencePipelineTests {
     fun testDirectoryCrawlAndTika() {
         val name = "testDirectoryCrawlAndTika"
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("src/test/resources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
 
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
 
-        pipeline.registry.register(FileOriginalContentCapability())
 
         val view = runPipeline(pipeline,name)
         assertEquals(4, view.size)
@@ -185,12 +210,6 @@ class IntelligencePipelineTests {
         pipeline.stop()
     }
 
-    private fun createPipelineAndRunWithResults(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): List<DataRecord> {
-        val pipeline = createPipeline(name,ingestors,producers)
-        val view = runPipeline(pipeline,name)
-        pipeline.stop()
-        return view
-    }
 
     private fun runPipeline(pipeline: IntelligencePipeline, storeName: String): List<DataRecord> {
         var view = emptyList<DataRecord>()
@@ -205,21 +224,31 @@ class IntelligencePipelineTests {
 
     private suspend fun createDataRecords(name: String): List<DataRecord> {
         val builder = StreamsBuilder()
-        val table = builder.table<Long, DataRecord>(DATARECORD_TOPIC,
+        val table = builder.table<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
                 Consumed.with(Serdes.LongSerde(), DataRecordSerde()),
                 Materialized.`as`(name))
-
         val myStreamConfig = Properties()
         myStreamConfig.putAll(streamsConfig)
         myStreamConfig.put("application.id", "stream_" + name)
 
+        /*
+        val chunkStream =
+                builder.stream<Long, Chunk>(CHUNK_TOPIC,
+                        Consumed.with(Serdes.LongSerde(),
+                                KotlinSerde(Chunk::class.java)))
+        chunkStream.foreach{k,v -> println("chunk --- $k: $v")}
+        */
+
         val streams = KafkaStreams(builder.build(), myStreamConfig)
         streams.cleanUp()
         streams.start()
-        delay(8000)
+
+        delay(16000)
         val store = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
 
+
         val view = store.all().asSequence().toList()
+
         streams.close()
         return view.map { keyValue ->  keyValue.value}
     }

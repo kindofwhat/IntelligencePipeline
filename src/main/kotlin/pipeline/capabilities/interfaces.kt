@@ -15,7 +15,9 @@ const val htmlTextIn = "htmlTextIn"
 
 const val textOut = "textOut"
 const val simpleTextOut = "simpleTextOut"
+const val simpleTextOutPath = "simpleTextOutPath"
 const val htmlTextOut = "htmlTextOut"
+const val htmlTextOutPath = "htmlTextOutPath"
 
 @Target(AnnotationTarget.CLASS, AnnotationTarget.VALUE_PARAMETER)
 @MustBeDocumented
@@ -30,6 +32,10 @@ interface Capability <T>{
 }
 
 @HasCapabilities(originalContentIn) interface OriginalContentCapability: Capability<InputStream?>
+
+@HasCapabilities(simpleTextOutPath) interface SimpleTextOutPathCapability: Capability<String?>
+@HasCapabilities(simpleTextOutPath) interface HtmlTextOutPathCapability: Capability<String?>
+
 
 interface FullTextCapabilityIn: Capability<String?>
 @HasCapabilities(simpleTextIn) interface TxtTextCapabilityIn: FullTextCapabilityIn

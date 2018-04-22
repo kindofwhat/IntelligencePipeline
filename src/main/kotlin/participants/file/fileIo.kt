@@ -21,8 +21,10 @@ class FileOriginalContentCapability: OriginalContentCapability {
 }
 
 fun fileRepresentationStrategy(rootPath: String, dataRecord: DataRecord, ending: String, createFileIfNotExisting:Boolean): File? {
-    val file = File(rootPath + "/" + dataRecord.hashCode() + "." + ending)
-    if(!file.exists() && createFileIfNotExisting) {
+
+    val regex = Regex(":|\\\\|/")
+    val file = File(rootPath + "/" + regex.replace(dataRecord.representation.path,"-")+ "." + ending)
+    if(!file.exists() && createFileIfNotExisting && !file.isDirectory) {
         Files.createDirectories(Paths.get(file.toURI()).parent)
         return file
     } else if(file.exists()) {
@@ -31,6 +33,18 @@ fun fileRepresentationStrategy(rootPath: String, dataRecord: DataRecord, ending:
 
     return null
 }
+class FileSimpleTextOutPathCapability(val rootPath: String):SimpleTextOutPathCapability {
+    override fun execute(name: String, dataRecord: DataRecord): String? {
+        return fileRepresentationStrategy(rootPath,dataRecord,"txt", true)?.path
+    }
+}
+
+class FileHtmlTextOutPathCapability(val rootPath: String):SimpleTextOutPathCapability {
+    override fun execute(name: String, dataRecord: DataRecord): String? {
+        return fileRepresentationStrategy(rootPath,dataRecord,"html", true)?.path
+    }
+}
+
 
 class FileTxtOutputProvider(val rootPath:String) : TxtTextCapabilityOut {
     override fun execute(name: String, dataRecord: DataRecord): OutputStream? {
