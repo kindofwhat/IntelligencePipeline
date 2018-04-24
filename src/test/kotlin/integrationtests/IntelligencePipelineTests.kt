@@ -61,11 +61,13 @@ class IntelligencePipelineTests {
             } )
 
             pipeline.registry.register(FileOriginalContentCapability())
+
             pipeline.registry.register(FileTxtOutputProvider("out/test"))
-            pipeline.registry.register(FileHtmlOutputProvider("out/test"))
-            pipeline.registry.register(FileHtmlStringProvider("out/test"))
             pipeline.registry.register(FileTxtStringProvider("out/test"))
             pipeline.registry.register(FileSimpleTextOutPathCapability("out/test"))
+
+            pipeline.registry.register(FileHtmlOutputProvider("out/test"))
+            pipeline.registry.register(FileHtmlStringProvider("out/test"))
             pipeline.registry.register(FileHtmlTextOutPathCapability("out/test"))
 
             pipeline.registerDocumentRepresentationProducer(TikaTxtDocumentRepresentationProducer(pipeline.registry))

@@ -39,7 +39,7 @@ class FileSimpleTextOutPathCapability(val rootPath: String):SimpleTextOutPathCap
     }
 }
 
-class FileHtmlTextOutPathCapability(val rootPath: String):SimpleTextOutPathCapability {
+class FileHtmlTextOutPathCapability(val rootPath: String):HtmlTextOutPathCapability {
     override fun execute(name: String, dataRecord: DataRecord): String? {
         return fileRepresentationStrategy(rootPath,dataRecord,"html", true)?.path
     }
