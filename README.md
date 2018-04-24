@@ -62,6 +62,9 @@ for systems where the second, better producer cannot work efficiently with large
 ### Solution outlines
 *  give each producer a weight: the higher the more important it is
 
+## MISC
+* why does exactly once not work?
+* how to handle deletes?
 
 # Notes
 - make sure to set advertised.host.name in the bootstrap config

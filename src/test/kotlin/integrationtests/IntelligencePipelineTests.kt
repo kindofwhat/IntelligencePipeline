@@ -1,6 +1,5 @@
 package integrationtests
 
-import datatypes.Chunk
 import datatypes.DataRecord
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
@@ -20,10 +19,10 @@ import participants.*
 import pipeline.IntelligencePipeline
 import pipeline.IntelligencePipeline.Companion.CHUNK_TOPIC
 import pipeline.IntelligencePipeline.Companion.DATARECORD_CONSOLIDATED_TOPIC
-import pipeline.IntelligencePipeline.Companion.METADATA_TOPIC
+import pipeline.IntelligencePipeline.Companion.METADATA_EVENT_TOPIC
 import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_TOPIC
-import pipeline.IntelligencePipeline.Companion.DATARECORD_TOPIC
-import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_TOPIC
+import pipeline.IntelligencePipeline.Companion.DATARECORD_EVENT_TOPIC
+import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_EVENT_TOPIC
 import pipeline.serialize.KotlinSerde
 import java.io.File
 import java.nio.file.Files
@@ -53,14 +52,13 @@ class IntelligencePipelineTests {
         class DataRecordSerde() : KotlinSerde<DataRecord>(DataRecord::class.java)
 
         fun createPipeline(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): IntelligencePipeline {
-            val pipeline = IntelligencePipeline(hostUrl, stateDir,name)
+            val pipeline = IntelligencePipeline(hostUrl, stateDir,"testPipeline")
             ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
             producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
-            pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
+//            pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
             pipeline.registerSideEffect("filewriter", {key, value ->
                 File("out/$key.json").bufferedWriter().use { out -> out.write(JSON(indented = true).stringify(value)) }
             } )
-
 
             pipeline.registry.register(FileOriginalContentCapability())
             pipeline.registry.register(FileTxtOutputProvider("out/test"))
@@ -100,7 +98,7 @@ class IntelligencePipelineTests {
                             //doesn't work, at least on windows
 
                             //cluster.waitForRemainingTopics(1000)
-                            //cluster.deleteTopicsAndWait(1000, *arrayOf(DOCUMENTREPRESENTATION_TOPIC, DOCUMENTREPRESENTATION_INGESTION_TOPIC, METADATA_TOPIC, DATARECORD_TOPIC))
+                            //cluster.deleteTopicsAndWait(1000, *arrayOf(DOCUMENTREPRESENTATION_TOPIC, DOCUMENTREPRESENTATION_INGESTION_TOPIC, METADATA_TOPIC, DATARECORD_EVENT_TOPIC))
                         }
                         println("done, kthxbye")
                     }catch (t:Throwable)  {
@@ -118,10 +116,10 @@ class IntelligencePipelineTests {
                 cluster.createTopic(DOCUMENTREPRESENTATION_INGESTION_TOPIC)
                 cluster.createTopic(DOCUMENTREPRESENTATION_TOPIC)
                 cluster.createTopic(METADATA_TOPIC)
-                cluster.createTopic(DATARECORD_TOPIC)
+                cluster.createTopic(DATARECORD_EVENT_TOPIC)
                  */
                 cluster.start()
-                cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_TOPIC,METADATA_TOPIC,DATARECORD_TOPIC, CHUNK_TOPIC, DATARECORD_CONSOLIDATED_TOPIC)
+                cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_EVENT_TOPIC,METADATA_EVENT_TOPIC,DATARECORD_EVENT_TOPIC, CHUNK_TOPIC, DATARECORD_CONSOLIDATED_TOPIC)
                 hostUrl = cluster.bootstrapServers()
                 //pipeline = IntelligencePipeline(cluster.bootstrapServers(), stateDir)
                 println("starting embedded kafka cluster with " + cluster.bootstrapServers())
@@ -156,6 +154,25 @@ class IntelligencePipelineTests {
 
         }
 
+    }
+
+
+    @Test
+    @Throws(Exception::class)
+    fun testLargerDirectory() {
+        val name = "testLargeDirectory"
+
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("c:\\Users\\Christian\\Documents\\Architecture")), emptyList())
+
+        pipeline.registerMetadataProducer(HashMetadataProducer())
+        val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)
+        pipeline.registerMetadataProducer(tikaMetadataProducer)
+
+
+        runPipeline(pipeline,name)
+        runBlocking { delay(40000) }
+        pipeline.stop()
     }
 
 
@@ -243,7 +260,7 @@ class IntelligencePipelineTests {
         streams.cleanUp()
         streams.start()
 
-        delay(16000)
+        delay(4000)
         val store = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
 
 

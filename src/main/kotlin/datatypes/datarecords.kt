@@ -41,12 +41,6 @@ data class DataRecord(val name: String="",
                       val meta: Set<Metadata> = mutableSetOf())
 
 interface Event<C,P>
-@Serializable
-data class DataRecordEvent(val command: DataRecordCommand=DataRecordCommand.UPSERT, val record:DataRecord= DataRecord()):Event<BaseCommand,DataRecord>
-
-@Serializable
-data class MetadataEvent(val command: BaseCommand=BaseCommand.UPSERT, val record:Metadata=Metadata()):Event<BaseCommand,Metadata>
-
-
-@Serializable
-data class DocumentRepresentationEvent(val command: BaseCommand=BaseCommand.UPSERT, val record:DocumentRepresentation=DocumentRepresentation()):Event<BaseCommand,DocumentRepresentation>
+@Serializable data class DataRecordEvent(val command: DataRecordCommand=DataRecordCommand.UPSERT, val record:DataRecord= DataRecord()):Event<BaseCommand,DataRecord>
+@Serializable data class MetadataEvent(val command: BaseCommand=BaseCommand.UPSERT, val record:Metadata=Metadata()):Event<BaseCommand,Metadata>
+@Serializable data class DocumentRepresentationEvent(val command: BaseCommand=BaseCommand.UPSERT, val record:DocumentRepresentation=DocumentRepresentation()):Event<BaseCommand,DocumentRepresentation>

@@ -5,7 +5,6 @@ import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.consumeEach
 import kotlinx.coroutines.experimental.runBlocking
-import kotlinx.serialization.json.JSON
 import org.apache.commons.lang.StringUtils
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.Producer
@@ -16,8 +15,6 @@ import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.Consumed
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.StreamsBuilder
-import org.apache.kafka.streams.kstream.JoinWindows
-import org.apache.kafka.streams.kstream.Joined
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.kstream.Produced
 import participants.*
@@ -32,9 +29,9 @@ import java.util.*
 class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicationId:String ="IntelligencePipeline") {
     companion object {
         val DOCUMENTREPRESENTATION_INGESTION_TOPIC = "document-representation-ingestion"
-        val DOCUMENTREPRESENTATION_TOPIC = "document-representation"
-        val METADATA_TOPIC = "metadata"
-        val DATARECORD_TOPIC = "datarecord"
+        val DOCUMENTREPRESENTATION_EVENT_TOPIC = "document-representation-event"
+        val METADATA_EVENT_TOPIC = "metadata-event"
+        val DATARECORD_EVENT_TOPIC = "datarecord-event"
         val DATARECORD_CONSOLIDATED_TOPIC = "datarecord-consolidated"
         val CHUNK_TOPIC = "chunk"
     }
@@ -45,8 +42,6 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
     var streams:KafkaStreams? = null
 
     val subStreams = mutableListOf<KafkaStreams>()
-    val documentRepresentationProducer = mutableListOf<DocumentRepresentationProducer>()
-    val sideEffects = mutableListOf<PipelineSideEffect>()
 
     val ingestors = mutableListOf<PipelineIngestor>()
     val ingestionChannel = Channel<DocumentRepresentation>(Int.MAX_VALUE)
@@ -160,7 +155,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                 }.filter { key, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.record.values.isNotEmpty()
-                }.to(METADATA_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(MetadataEvent::class.java)))
+                }.to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(MetadataEvent::class.java)))
 
 
         val topology = builder.build()
@@ -195,7 +190,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                     //TODO: filter out the those that are exactly the same as before!
                     StringUtils.isNotEmpty(value.path)
                 }.mapValues { value -> DocumentRepresentationEvent(record = value) }
-                .to(DOCUMENTREPRESENTATION_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DocumentRepresentationEvent::class.java)))
+                .to(DOCUMENTREPRESENTATION_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DocumentRepresentationEvent::class.java)))
 
         val topology = builder.build()
 
@@ -243,10 +238,10 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
 
         ingestionStream.mapValues { documentRepresentation ->
             DataRecordEvent(DataRecordCommand.CREATE,DataRecord(representation = documentRepresentation, name = documentRepresentation.path))
-        }.to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
+        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
 
 
-        val documentRepresentationEventStream = builder.stream<Long, DocumentRepresentationEvent>(DOCUMENTREPRESENTATION_TOPIC,
+        val documentRepresentationEventStream = builder.stream<Long, DocumentRepresentationEvent>(DOCUMENTREPRESENTATION_EVENT_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(DocumentRepresentationEvent::class.java)))
 
@@ -256,10 +251,10 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
             } else{
                 throw Exception("Don't know how to handle $value")
             }
-        }.to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
+        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
 
 
-        val metadataEventStream = builder.stream<Long, MetadataEvent>(METADATA_TOPIC,
+        val metadataEventStream = builder.stream<Long, MetadataEvent>(METADATA_EVENT_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(MetadataEvent::class.java)))
 
@@ -269,9 +264,9 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
             } else{
                 throw Exception("Don't know how to handle $value")
             }
-        }.to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
+        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
 
-        val dataRecordEventStream = builder.stream<Long, DataRecordEvent>(DATARECORD_TOPIC,
+        val dataRecordEventStream = builder.stream<Long, DataRecordEvent>(DATARECORD_EVENT_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(DataRecordEvent::class.java)))
 
@@ -374,7 +369,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                         { thisDataRecord, otherDataRecord ->
                             thisDataRecord.copy(representation = otherDataRecord.representation)
                         })
-                .toStream().to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
+                .toStream().to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
 
         val representationsDataRecordJoinTable = metaToDataRecordAggregatorTable.leftJoin(documentRepresentationDataRecordTable,
                         { meta, document ->
@@ -384,7 +379,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
                                 meta
                             }
                         })
-        representationsDataRecordJoinTable.toStream().to(DATARECORD_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
+        representationsDataRecordJoinTable.toStream().to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
 
         val topology = builder.build()
 
