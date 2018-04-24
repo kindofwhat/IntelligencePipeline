@@ -57,7 +57,7 @@ class IntelligencePipelineTests {
             producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
 //            pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
             pipeline.registerSideEffect("filewriter", {key, value ->
-                File("out/$key.json").bufferedWriter().use { out -> out.write(JSON(indented = true).stringify(value)) }
+                fileRepresentationStrategy("out/test",value,"json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }
             } )
 
             pipeline.registry.register(FileOriginalContentCapability())
@@ -113,6 +113,7 @@ class IntelligencePipelineTests {
         @BeforeClass @JvmStatic
         fun startup() {
             //embedded instance
+            deleteDir(File("out/test"))
             if(embeddedMode) {
                 /*
                 cluster.createTopic(DOCUMENTREPRESENTATION_INGESTION_TOPIC)
@@ -159,7 +160,7 @@ class IntelligencePipelineTests {
     }
 
 
-    @Test
+    @Ignore
     @Throws(Exception::class)
     fun testLargerDirectory() {
         val name = "testLargeDirectory"
