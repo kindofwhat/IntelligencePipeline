@@ -10,7 +10,7 @@ import java.nio.file.Paths
 
 
 
-class FileOriginalContentCapability: OriginalContentCapability {
+@HasCapabilities(originalContentIn) class FileOriginalContentCapability: Capability<InputStream?> {
     override fun execute(name: String, dataRecord: DataRecord): InputStream? {
         val file = File(dataRecord.representation.path)
         if (file.isFile && file.canRead()) {
@@ -33,38 +33,39 @@ fun fileRepresentationStrategy(rootPath: String, dataRecord: DataRecord, ending:
 
     return null
 }
-class FileSimpleTextOutPathCapability(val rootPath: String):SimpleTextOutPathCapability {
+
+@HasCapabilities(simpleTextOutPath) class FileSimpleTextOutPathCapability(val rootPath: String):Capability<String?> {
     override fun execute(name: String, dataRecord: DataRecord): String? {
         return fileRepresentationStrategy(rootPath,dataRecord,"txt", true)?.path
     }
 }
 
-class FileHtmlTextOutPathCapability(val rootPath: String):HtmlTextOutPathCapability {
+@HasCapabilities(htmlTextOutPath) class FileHtmlTextOutPathCapability(val rootPath: String):Capability<String?> {
     override fun execute(name: String, dataRecord: DataRecord): String? {
         return fileRepresentationStrategy(rootPath,dataRecord,"html", true)?.path
     }
 }
 
 
-class FileTxtOutputProvider(val rootPath:String) : TxtTextCapabilityOut {
+@HasCapabilities(simpleTextOut)class FileTxtOutputProvider(val rootPath:String) : Capability<OutputStream?> {
     override fun execute(name: String, dataRecord: DataRecord): OutputStream? {
         return fileRepresentationStrategy(rootPath,dataRecord,"txt", true)?.outputStream()
     }
 }
 
-class FileHtmlOutputProvider(val rootPath:String) : HtmlCapabilityOut {
+@HasCapabilities(htmlTextOut) class FileHtmlOutputProvider(val rootPath:String) : Capability<OutputStream?> {
     override fun execute(name: String, dataRecord: DataRecord): OutputStream? {
         return fileRepresentationStrategy(rootPath,dataRecord,"html", true)?.outputStream()
     }
 }
 
-class FileHtmlStringProvider(val rootPath:String) : HtmlTextCapabilityIn {
+@HasCapabilities(htmlTextIn) class FileHtmlStringProvider(val rootPath:String) : Capability<String?> {
     override fun execute(name: String, dataRecord: DataRecord): String? {
         return fileRepresentationStrategy(rootPath,dataRecord,"html", false)?.readText(Charsets.UTF_8)
     }
 }
 
-class FileTxtStringProvider(val rootPath:String) : TxtTextCapabilityIn {
+@HasCapabilities(simpleTextIn) class FileTxtStringProvider(val rootPath:String) :  Capability<String?> {
     override fun execute(name: String, dataRecord: DataRecord): String? {
         return fileRepresentationStrategy(rootPath,dataRecord,"txt", false)?.readText(Charsets.UTF_8)
     }

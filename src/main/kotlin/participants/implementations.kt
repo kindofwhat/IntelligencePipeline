@@ -182,9 +182,10 @@ class TikaTxtDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy,
  *     </ul>
  */
 @RequiresCapabilities(originalContentIn)
+@HasCapabilities(languageDetection)
 class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
         MetadataProducer,
-        LanguageDetectionCapability {
+        Capability<String?> {
     override val name = "tika-metadata"
 
 

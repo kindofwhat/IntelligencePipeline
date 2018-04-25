@@ -30,24 +30,6 @@ interface Capability <T>{
     fun execute(name:String, dataRecord: DataRecord): T
 }
 
-@HasCapabilities(originalContentIn) interface OriginalContentCapability: Capability<InputStream?>
-
-@HasCapabilities(simpleTextOutPath) interface SimpleTextOutPathCapability: Capability<String?>
-@HasCapabilities(htmlTextOutPath) interface HtmlTextOutPathCapability: Capability<String?>
-
-
-interface FullTextCapabilityIn: Capability<String?>
-@HasCapabilities(simpleTextIn) interface TxtTextCapabilityIn: FullTextCapabilityIn
-@HasCapabilities(htmlTextIn) interface HtmlTextCapabilityIn: FullTextCapabilityIn
-
-interface TextCapabilityOut: Capability<OutputStream?>
-@HasCapabilities(simpleTextOut) interface TxtTextCapabilityOut: TextCapabilityOut
-@HasCapabilities(htmlTextOut) interface HtmlCapabilityOut: TextCapabilityOut
-
-
-@HasCapabilities(languageDetection) interface LanguageDetectionCapability:  Capability<String?>
-
-
 interface CapabilityRegistry {
     fun register(capability: Capability<*>)
 }

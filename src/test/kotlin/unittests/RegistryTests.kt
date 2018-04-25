@@ -25,7 +25,7 @@ class TestCapabilty1Int:Capability<Int> {
     }
 }
 
-class TestLanguageDetectionCapabilityIn:LanguageDetectionCapability {
+@HasCapabilities(languageDetection) class TestLanguageDetectionCapabilityIn:Capability<String?> {
     override fun execute(name: String, dataRecord: DataRecord): String {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
