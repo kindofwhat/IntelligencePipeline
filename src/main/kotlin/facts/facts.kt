@@ -1,7 +1,7 @@
 package facts
 
 import datatypes.DataRecord
-import org.apache.poi.ss.formula.functions.T
+
 
 /**
  * A proposition about @val proposal with the confidence, where 0 is totally unsure and 1.0 is 100% sure
