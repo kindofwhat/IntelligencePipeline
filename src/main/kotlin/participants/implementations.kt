@@ -7,6 +7,8 @@ import edu.stanford.nlp.pipeline.Annotation
 import edu.stanford.nlp.pipeline.StanfordCoreNLP
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations
 import edu.stanford.nlp.trees.TreeCoreAnnotations
+import facts.Proposer
+import facts.Proposition
 import kotlinx.coroutines.experimental.channels.SendChannel
 import kotlinx.io.InputStream
 import kotlinx.serialization.Serializable
@@ -14,7 +16,8 @@ import kotlinx.serialization.json.JSON
 import org.apache.commons.codec.digest.DigestUtils
 import org.apache.commons.lang.StringUtils
 import org.apache.tika.io.NullOutputStream
-import org.apache.tika.language.LanguageIdentifier
+import org.apache.tika.language.detect.LanguageDetector
+import org.apache.tika.language.detect.LanguageResult
 import org.apache.tika.parser.AutoDetectParser
 import org.apache.tika.sax.ToHTMLContentHandler
 import org.apache.tika.sax.ToTextContentHandler
@@ -185,19 +188,25 @@ class TikaTxtDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy,
 @HasCapabilities(languageDetection)
 class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
         MetadataProducer,
-        Capability<String?> {
+        Capability<String?>,
+        Proposer<DataRecord,String> {
+
+    override fun propose(proposedFor: DataRecord): Proposition<String> {
+        val detected = extractLang(proposedFor)
+        return Proposition(detected?.language?:"",detected?.rawScore?:0.0f)
+    }
+
     override val name = "tika-metadata"
 
 
     override fun  execute(name:String, dataRecord: DataRecord): String? {
-        return dataRecord.meta.filter { it.createdBy == name }.firstOrNull()?.values?.get("lang")?:extractLang(dataRecord)
+        return dataRecord.meta.filter { it.createdBy == name }.firstOrNull()?.values?.get("lang")?:extractLang(dataRecord)?.language
     }
 
-    fun extractLang(record: DataRecord):String? {
+    private fun extractLang(record: DataRecord): LanguageResult? {
         val text =  lookup.lookup(simpleTextIn, record, String::class.java)
         if(StringUtils.isNotEmpty(text)) {
-            val language = LanguageIdentifier(text)?.language
-            return language
+            return LanguageDetector.getDefaultLanguageDetector().detect(text)
         }
         return null
     }
@@ -218,7 +227,7 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
             inputStream.use { input ->
                 val contentHandler = DefaultHandler()
                 parser.parse(input, contentHandler, metadata)
-                metadata.set("lang", extractLang(record))
+                metadata.set("lang", extractLang(record)?.language?:"")
             }
         }
         metadata.names().forEach { name ->

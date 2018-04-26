@@ -73,14 +73,15 @@ for systems where the second, better producer cannot work efficiently with large
 ## V0.1: make it available on Github
 
 ### Open
-- [ ]  Finer Domain Model: Sentences, Token, etc
-- [ ]  Quickstart Guide
 - [ ]  Good test coverage
 - [ ]  robust exception handling: test with a rogue MetadataProducer
 - [ ]  Basic result reporting
-- [ ]  make it available online somewhere
+- [ ]  make it available on Github
+
 
 ### Done
+- [x]  Quickstart Guide
+- [x]  Finer Domain Model: Sentences, Token, etc
 - [x] Participiants, Capabilities and requirements
 - [x] check that it's running with local cluster
 - [x] Keep represenation off kafka (simple file handling)
@@ -88,13 +89,15 @@ for systems where the second, better producer cannot work efficiently with large
 ## V0.2: Check all use cases with Kafka
 
 ### Open
+- [ ] uberjar or something similar
+- [ ] make it available online somewhere
 - [ ] Multiple IP in parallel
 - [ ] Ingestion is on schedule
 - [ ] Large file strategy: many metadata producers take too long, e.g. stanfordnlp => tokenize this
 - [ ] IP can be rescheduled
 - [ ] Intelligent reprocessing of Metadata
 - [ ] Basic GUI
-- [ ] coroutines for MetadataProducers
+- [ ] coroutines for MetadataProducers and where it makes sense
 
 
 ### Done
@@ -108,6 +111,14 @@ for systems where the second, better producer cannot work efficiently with large
 - [ ] Ingestors based on Kafka Connect
 - [ ] One ouptclient (DBMS or Graph DB) based on Kafka Connect
 - [ ] (optional) REST API
+
+
+### Done
+
+## V0.4: let them fight
+Have different frameworks compete and have means to select/evaluate the best possibility
+
+### Open
 
 
 ### Done

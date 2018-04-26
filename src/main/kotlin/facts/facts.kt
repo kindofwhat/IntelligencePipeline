@@ -7,26 +7,26 @@ import datatypes.DataRecord
  * A proposition about @val proposal with the confidence, where 0 is totally unsure and 1.0 is 100% sure
  *
  */
-interface Proposition<T,U> {
-    val proposedFor:T
-    val proposal:U
-    val confidence:Float
+data class Proposition<U>(val proposal:U,val confidence:Float)
+
+interface Proposer<T,U> {
+    fun propose( proposedFor:T): Proposition<U>
 }
 
 /**
 *   Example proposition: what language does a DataRecord have....
  */
-interface LanguageProposition:Proposition<DataRecord,String>
+
 
 /**
  * An "independet" evaluation of an Evaluator: the score should be between 0 and 1
  */
-data class PropositionEvaluation<T,U> (val proposition: Proposition<T,U>, val score:Float, val evaluatedBy:String)
+data class PropositionEvaluation<U> (val proposition: Proposition<U>, val score:Float, val evaluatedBy:String)
 
 /**
  * evaluates a bunch of propositions and gives them a score
  */
-interface Evaluator<T,U> {
-    fun evaluatePropositions(propositions:Set<Proposition<T,U>>):Set<PropositionEvaluation<T,U>>
+interface Evaluator<U> {
+    fun evaluatePropositions(propositions:Set<Proposition<U>>):Set<PropositionEvaluation<U>>
 }
 
