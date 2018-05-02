@@ -250,7 +250,10 @@ class IntelligencePipelineTests {
     }
 
 
-     fun runPipeline(pipeline: IntelligencePipeline, predicate: (DataRecord) -> Boolean, expectedResults:Int): List<DataRecord> {
+     fun runPipeline(pipeline: IntelligencePipeline,
+                     predicate: (DataRecord) -> Boolean,
+                     expectedResults:Int,
+                     timeout:Long = 20000L): List<DataRecord> {
         var view = emptyList<DataRecord>()
         runBlocking {
             val job = launch {
@@ -258,8 +261,8 @@ class IntelligencePipelineTests {
             }
             job.join()
             delay(2000)
-            withTimeout(20000L) {
-                repeat@ for(i in 0..20) {
+            withTimeout(timeout) {
+                repeat@ while(true) {
                     delay(500L)
                     view = pipeline.all().filter(predicate)
                     if(view.size >= expectedResults) {
