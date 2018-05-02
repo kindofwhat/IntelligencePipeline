@@ -69,7 +69,6 @@ class RegistryTests {
         val registry=DefaultCapabilityRegistry()
         registry.register(TestLanguageDetectionCapabilityIn())
         assert(registry.requestCapability(languageDetection).size == 1)
-        assert(registry.requestCapability(simpleTextIn).size == 1)
         assert(registry.requestCapability(htmlTextIn).size == 0)
     }
 

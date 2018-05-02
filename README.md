@@ -40,6 +40,8 @@ pipeline?.registerIngestor(DirectoryIngestor("src/test/resources"))
         pipeline?.run()
     }
 ``` 
+## Notes
+- make sure to set advertised.host.name in the bootstrap config
 
 
 # Open questions
@@ -66,8 +68,6 @@ for systems where the second, better producer cannot work efficiently with large
 * why does exactly once not work?
 * how to handle deletes?
 
-# Notes
-- make sure to set advertised.host.name in the bootstrap config
 
 # Roadmap
 ## V0.1: make it available on Github
