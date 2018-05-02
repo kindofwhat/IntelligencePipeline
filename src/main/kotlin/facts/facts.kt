@@ -7,7 +7,7 @@ import datatypes.DataRecord
  * A proposition about @val proposal with the confidence, where 0 is totally unsure and 1.0 is 100% sure
  *
  */
-data class Proposition<U>(val proposal:U,val confidence:Float)
+open class Proposition<U>(val proposal:U, val confidence:Float)
 
 interface Proposer<T,U> {
     fun propose( proposedFor:T): Proposition<U>

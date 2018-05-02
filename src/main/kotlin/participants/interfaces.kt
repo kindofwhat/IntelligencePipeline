@@ -44,7 +44,7 @@ interface MetadataProducer : PipelineParticipant {
  * creates a stream of "chunks" of a datarecord. Those chunks may be paragraphs, sentences, words
  */
 interface ChunkProducer : PipelineParticipant {
-    suspend fun chunks(record: DataRecord):Sequence<Chunk>
+    suspend fun chunks(record: DataRecord, recordId:Long):Sequence<Chunk>
 }
 
 interface DocumentRepresentationProducer : PipelineParticipant {

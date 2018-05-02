@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JSON
 import org.apache.commons.codec.digest.DigestUtils
 import org.apache.commons.lang.StringUtils
 import org.apache.tika.io.NullOutputStream
+import org.apache.tika.language.LanguageIdentifier
 import org.apache.tika.language.detect.LanguageDetector
 import org.apache.tika.language.detect.LanguageResult
 import org.apache.tika.parser.AutoDetectParser
@@ -55,7 +56,7 @@ class StanfordNlpSentenceChunkProducer(val lookup: CapabilityLookupStrategy):Chu
     }
     val pipeline = StanfordCoreNLP(props)
 
-    override suspend fun chunks(record: DataRecord): Sequence<Chunk> {
+    override suspend fun chunks(record: DataRecord, recordId:Long): Sequence<Chunk> {
         val text = lookup.lookup(simpleTextIn, record, String::class.java)
         //val text:String? = record.meta.firstOrNull { metadata -> metadata.createdBy == TikaMetadataProducer().name }?.values?.get("text")
         if (StringUtils.isNotEmpty(text)) {
@@ -68,11 +69,12 @@ class StanfordNlpSentenceChunkProducer(val lookup: CapabilityLookupStrategy):Chu
                 // these are all the sentences in this document
                 // a CoreMap is essentially a Map that uses class objects as keys and has values with custom types
                 val sentences = document.get(CoreAnnotations.SentencesAnnotation::class.java)
-                yield(Chunk(type=ChunkType.SENTENCE, command = ChunkCommand.START))
+                yield(Chunk(type=ChunkType.SENTENCE, command = ChunkCommand.START, index = 0L, parentId = recordId))
+                var idx:Long=0
                 for (sentence in sentences) {
-                    yield(Chunk(type = ChunkType.SENTENCE,  content = sentence.toString()))
+                    yield(Chunk(type = ChunkType.SENTENCE,  content = sentence.toString(), index = idx++, parentId = recordId))
                 }
-                yield(Chunk(type=ChunkType.SENTENCE, command = ChunkCommand.LAST))
+                yield(Chunk(type=ChunkType.SENTENCE, command = ChunkCommand.LAST, index = 0L, parentId = recordId))
             }
         }
         return emptySequence()
@@ -193,20 +195,20 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
 
     override fun propose(proposedFor: DataRecord): Proposition<String> {
         val detected = extractLang(proposedFor)
-        return Proposition(detected?.language?:"",detected?.rawScore?:0.0f)
+        return Proposition(detected?:"",1.0f)
     }
 
     override val name = "tika-metadata"
 
 
     override fun  execute(name:String, dataRecord: DataRecord): String? {
-        return dataRecord.meta.filter { it.createdBy == name }.firstOrNull()?.values?.get("lang")?:extractLang(dataRecord)?.language
+        return dataRecord.meta.filter { it.createdBy == name }.firstOrNull()?.values?.get("lang")?:extractLang(dataRecord)?:""
     }
 
-    private fun extractLang(record: DataRecord): LanguageResult? {
+    private fun extractLang(record: DataRecord): String? {
         val text =  lookup.lookup(simpleTextIn, record, String::class.java)
         if(StringUtils.isNotEmpty(text)) {
-            return LanguageDetector.getDefaultLanguageDetector().detect(text)
+            return LanguageIdentifier(text).language
         }
         return null
     }
@@ -227,7 +229,7 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
             inputStream.use { input ->
                 val contentHandler = DefaultHandler()
                 parser.parse(input, contentHandler, metadata)
-                metadata.set("lang", extractLang(record)?.language?:"")
+                metadata.set("lang", extractLang(record)?:"")
             }
         }
         metadata.names().forEach { name ->

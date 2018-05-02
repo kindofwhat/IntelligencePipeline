@@ -18,8 +18,9 @@ inline fun <reified T : Any> serialize(value: T):ByteArray {
 }
 
 
-class KotlinSerializer<T:Any> :Serializer<T> {
-    override fun serialize(topic: String?, data: T): ByteArray {
+class KotlinSerializer<T:Any> :Serializer<T?> {
+    override fun serialize(topic: String?, data: T?): ByteArray? {
+        if(data == null) return null
         return JSON.stringify(data::class.serializer() as KSerializer<T>,data)
                 .toByteArray(Charset.forName("utf-8"))
     }
@@ -55,7 +56,7 @@ open class KotlinSerde<T:Any>(obj: Class<T>): Serde<T> {
         deserializer.configure(configs,isKey)
     }
 
-    override fun serializer(): Serializer<T> {
+    override fun serializer(): Serializer<T?> {
         return serializer;
     }
 

@@ -48,6 +48,7 @@ dependencies {
     compile 'org.apache.opennlp:opennlp:1.8.4'
     compile 'com.github.kittinunf.fuel:fuel:1.12.0'
     compile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
+    compile "com.google.guava:guava:23.5-jre"
 
     testCompile "org.apache.kafka:kafka_2.12:$kafka_version:test"
     testCompile "org.apache.kafka:kafka-clients:$kafka_version:test"

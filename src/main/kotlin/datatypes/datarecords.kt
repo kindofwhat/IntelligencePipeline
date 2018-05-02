@@ -8,7 +8,8 @@ enum class ChunkCommand { START, ADD, APPEND, INSERT,UPDATE,MERGE, DELETE, LAST 
 enum class ChunkType { GENERAL, PAGE, PARAGRAPH,SENTENCE,WORD }
 
 @Serializable
-data class Chunk(val type:ChunkType=ChunkType.GENERAL, val command:ChunkCommand=ChunkCommand.ADD, val content:String="")
+data class Chunk(val type:ChunkType=ChunkType.GENERAL, val command:ChunkCommand=ChunkCommand.ADD,
+                 val index:Long=-1, val parentId:Long=-1, val content:String="")
 
 
 
@@ -26,12 +27,11 @@ data class DocumentRepresentation(val path:String="",
                                   var createdBy: String=NoOpIngestor().name)
 
 
-enum class BaseCommand {
-    INSERT, UPDATE, UPSERT, DELETE
-}
+enum class BaseCommand { INSERT, UPDATE, UPSERT, DELETE }
 
 enum class DataRecordCommand {
-    CREATE, UPSERT, DELETE, UPSERT_METADATA, DELETE_METADATA, UPSERT_DOCUMENT_REPRESENTATION, DELETE_DOCUMENT_REPRESENTATION
+    CREATE, UPSERT, DELETE, UPSERT_METADATA, DELETE_METADATA, UPSERT_DOCUMENT_REPRESENTATION,
+    DELETE_DOCUMENT_REPRESENTATION
 }
 
 @Serializable

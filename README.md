@@ -74,12 +74,12 @@ for systems where the second, better producer cannot work efficiently with large
 
 ### Open
 - [ ]  Good test coverage
-- [ ]  robust exception handling: test with a rogue MetadataProducer
 - [ ]  Basic result reporting
 - [ ]  make it available on Github
 
 
 ### Done
+- [x]  robust exception handling: test with a rogue MetadataProducer
 - [x]  Quickstart Guide
 - [x]  Finer Domain Model: Sentences, Token, etc
 - [x] Participiants, Capabilities and requirements

@@ -1,9 +1,12 @@
 package integrationtests
 
+import datatypes.Chunk
 import datatypes.DataRecord
+import datatypes.Metadata
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.experimental.withTimeout
 import kotlinx.serialization.json.JSON
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.Consumed
@@ -12,6 +15,7 @@ import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.state.QueryableStoreTypes
+import org.jboss.netty.channel.Channels.future
 import org.junit.*
 import org.junit.Assert.assertEquals
 import participants.file.*
@@ -159,6 +163,26 @@ class IntelligencePipelineTests {
 
     }
 
+    @Test
+    @Throws(Exception::class)
+    fun testRogueMetadataProducer() {
+        class RogueMetadataProducer() :MetadataProducer {
+            override val name="rogue";
+            override fun metadataFor(record: DataRecord): Metadata {
+                throw RuntimeException("na, won't to!")
+            }
+        }
+
+        val name = "testRogueMetadataProducer"
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
+
+        pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
+        pipeline.registerMetadataProducer(RogueMetadataProducer())
+
+        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer(pipeline.registry).name} }, 3)
+        pipeline.stop()
+    }
 
     @Ignore
     @Throws(Exception::class)
@@ -173,8 +197,7 @@ class IntelligencePipelineTests {
         pipeline.registerMetadataProducer(tikaMetadataProducer)
 
 
-        runPipeline(pipeline,name)
-        runBlocking { delay(40000) }
+        runPipeline(pipeline,{record:DataRecord -> true}, 2000)
         pipeline.stop()
     }
 
@@ -189,9 +212,9 @@ class IntelligencePipelineTests {
 
         pipeline.registerMetadataProducer(HashMetadataProducer())
 
-        val view = runPipeline(pipeline,name)
-        assertEquals(4, view.size)
-        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name} }.size)
+        val view = runPipeline(pipeline,  {
+            kv:DataRecord ->
+                kv.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name}},3)
         pipeline.stop()
     }
 
@@ -208,9 +231,7 @@ class IntelligencePipelineTests {
         pipeline.registerMetadataProducer(nlpParserProducer)
         pipeline.registerMetadataProducer(tikaMetadataProducer)
 
-        val view = runPipeline(pipeline,name)
-        assertEquals(4, view.size)
-        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == nlpParserProducer.name} }.size)
+        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == nlpParserProducer.name} },3)
         pipeline.stop()
     }
 
@@ -224,20 +245,29 @@ class IntelligencePipelineTests {
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
 
 
-        val view = runPipeline(pipeline,name)
-        assertEquals(4, view.size)
-        assertEquals(3, view.filter { kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer(pipeline.registry).name} }.size)
+        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer(pipeline.registry).name} },3)
         pipeline.stop()
     }
 
 
-    private fun runPipeline(pipeline: IntelligencePipeline, storeName: String): List<DataRecord> {
+     fun runPipeline(pipeline: IntelligencePipeline, predicate: (DataRecord) -> Boolean, expectedResults:Int): List<DataRecord> {
         var view = emptyList<DataRecord>()
-        launch {
-            pipeline.run()
-        }
         runBlocking {
-            view = createDataRecords(storeName)
+            val job = launch {
+                pipeline.run()
+            }
+            job.join()
+            delay(2000)
+            withTimeout(20000L) {
+                repeat@ for(i in 0..20) {
+                    delay(500L)
+                    view = pipeline.all().filter(predicate)
+                    if(view.size >= expectedResults) {
+                        break@repeat
+                    }
+                }
+            }
+//            view = createDataRecords(storeName)
         }
         return view
     }
@@ -263,7 +293,7 @@ class IntelligencePipelineTests {
         streams.cleanUp()
         streams.start()
 
-        delay(4000)
+        delay(8000)
         val store = streams.store(table.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
 
 
