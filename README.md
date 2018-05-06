@@ -74,8 +74,6 @@ for systems where the second, better producer cannot work efficiently with large
 
 ### Open
 - [ ]  Good test coverage
-- [ ]  Basic result reporting
-- [ ]  make it available on Github
 
 
 ### Done
@@ -85,6 +83,8 @@ for systems where the second, better producer cannot work efficiently with large
 - [x] Participiants, Capabilities and requirements
 - [x] check that it's running with local cluster
 - [x] Keep represenation off kafka (simple file handling)
+- [x]  make it available on Github
+- [x]  Basic result reporting
 
 ## V0.2: Check all use cases with Kafka
 
