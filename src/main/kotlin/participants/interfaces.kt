@@ -41,6 +41,13 @@ interface MetadataProducer : PipelineParticipant {
 }
 
 /**
+ * creates metadata from a chunk
+ */
+interface ChunkMetadataProducer : PipelineParticipant {
+    fun metadataFor(chunk: Chunk): Metadata
+}
+
+/**
  * creates a stream of "chunks" of a datarecord. Those chunks may be paragraphs, sentences, words
  */
 interface ChunkProducer : PipelineParticipant {

@@ -1,12 +1,9 @@
 package pipeline
 
-import com.google.common.cache.CacheBuilder
-import com.google.common.cache.CacheLoader
 import datatypes.*
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.consumeEach
-import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.runBlocking
 import org.apache.commons.lang.StringUtils
 import org.apache.kafka.clients.producer.KafkaProducer
@@ -19,10 +16,7 @@ import org.apache.kafka.streams.Consumed
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.StreamsBuilder
-import org.apache.kafka.streams.kstream.Materialized
-import org.apache.kafka.streams.kstream.Produced
 import org.apache.kafka.streams.state.QueryableStoreTypes
-import org.apache.kafka.streams.state.ReadOnlyKeyValueStore
 import participants.*
 import pipeline.capabilities.Capability
 import pipeline.capabilities.DefaultCapabilityRegistry
@@ -30,10 +24,9 @@ import pipeline.serialize.KotlinSerde
 import pipeline.serialize.serialize
 import util.log
 import java.util.*
-import com.google.common.collect.MinMaxPriorityQueue.maximumSize
 import kotlinx.coroutines.experimental.launch
-import org.apache.kafka.streams.kstream.KTable
-import org.apache.kafka.streams.state.internals.KeyValueStoreBuilder
+import org.apache.kafka.streams.errors.InvalidStateStoreException
+import org.apache.kafka.streams.kstream.*
 import java.util.concurrent.TimeUnit
 
 
@@ -69,12 +62,21 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
     }
 */
     fun all():List<DataRecord> {
-        val iter =streams?.store(dataRecordTable.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
-                ?.all()
-        val res = iter?.asSequence()?.toList()?.map { keyValue ->  keyValue.value}?: emptyList()
-        iter?.close()
-        return res
+        for(i in 0..5) {
+            try {
+                val iter =streams?.store(dataRecordTable.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, DataRecord>())
+                        ?.all()
+                val res = iter?.asSequence()?.toList()?.map { keyValue ->  keyValue.value}?: emptyList()
+                iter?.close()
+                return res
+            }catch(ex: InvalidStateStoreException) {
+                log("Error retrieving store $ex")
+                Thread.sleep(1000)
+            }
+        }
+        return emptyList()
     }
+
     init {
         val producerConfig = Properties()
         producerConfig.put("bootstrap.servers", kafkaBootstrap)
@@ -98,6 +100,31 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         streamsConfig.put("application.id", applicationId)
     }
 
+    /**
+     * creates an own stream for this producer and starts it
+     */
+    fun registerChunkMetadataProducer(producer: ChunkMetadataProducer) {
+        val builder = StreamsBuilder()
+
+        //the generic datarecord stream
+        val chunkStream =
+                builder.stream<Long, Chunk>(CHUNK_TOPIC,
+                        Consumed.with(Serdes.LongSerde(),
+                                KotlinSerde(Chunk::class.java)))
+                        .mapValues {  value -> MetadataEvent(BaseCommand.UPSERT,
+                                producer.metadataFor(value))}
+                        .to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(MetadataEvent::class.java)))
+        val topology = builder.build()
+
+        val myProp = Properties()
+        myProp.putAll(streamsConfig)
+        myProp.put("application.id", applicationId + "_chunk_metadata_" + producer.name)
+        val streams = KafkaStreams(topology, myProp )
+        streams.start()
+
+        subStreams.add(streams)
+    }
+
      /**
      * creates an own stream for this producer and starts it
      */
@@ -108,7 +135,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         val datarecordStream =
                 builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
                         Consumed.with(Serdes.LongSerde(),
-                                KotlinSerde(DataRecord::class.java)))
+                               KotlinSerde(DataRecord::class.java)))
 
         //act on the default representation
         datarecordStream

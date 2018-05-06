@@ -129,7 +129,7 @@ class IntelligencePipelineTests {
                 cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_EVENT_TOPIC,METADATA_EVENT_TOPIC,DATARECORD_EVENT_TOPIC, CHUNK_TOPIC, DATARECORD_CONSOLIDATED_TOPIC)
                 hostUrl = cluster.bootstrapServers()
                 //pipeline = IntelligencePipeline(cluster.bootstrapServers(), stateDir)
-                println("starting embedded kafka cluster with " + cluster.bootstrapServers())
+                println("starting embedded kafka cluster with zookeeper ${cluster.zKConnectString()} and bootstrapServes ${cluster.bootstrapServers()}" )
                 streamsConfig.put("bootstrap.servers", cluster.bootstrapServers())
 
             } else {
@@ -237,6 +237,20 @@ class IntelligencePipelineTests {
 
     @Test
     @Throws(Exception::class)
+    fun testDirectoryCrawlAndTikaChunkLanguageDetection() {
+        val name = "testDirectoryCrawlAndTikaChunkLanguageDetection"
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
+
+        pipeline.registerChunkMetadataProducer(TikaChunkLanguageDetection())
+
+
+        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaChunkLanguageDetection().name} },3)
+        pipeline.stop()
+    }
+
+    @Test
+    @Throws(Exception::class)
     fun testDirectoryCrawlAndTika() {
         val name = "testDirectoryCrawlAndTika"
         val pipeline = createPipeline(name,
@@ -253,7 +267,7 @@ class IntelligencePipelineTests {
      fun runPipeline(pipeline: IntelligencePipeline,
                      predicate: (DataRecord) -> Boolean,
                      expectedResults:Int,
-                     timeout:Long = 20000L): List<DataRecord> {
+                     timeout:Long = 40000L): List<DataRecord> {
         var view = emptyList<DataRecord>()
         runBlocking {
             val job = launch {
@@ -262,7 +276,7 @@ class IntelligencePipelineTests {
             job.join()
             delay(2000)
             withTimeout(timeout) {
-                repeat@ while(true) {
+                repeat@while(true) {
                     delay(500L)
                     view = pipeline.all().filter(predicate)
                     if(view.size >= expectedResults) {

@@ -19,7 +19,7 @@ interface Proposer<T,U> {
 
 
 /**
- * An "independet" evaluation of an Evaluator: the score should be between 0 and 1
+ * An "independent" evaluation of an Proposition: the score should be between 0 and 1
  */
 data class PropositionEvaluation<U> (val proposition: Proposition<U>, val score:Float, val evaluatedBy:String)
 
@@ -29,4 +29,3 @@ data class PropositionEvaluation<U> (val proposition: Proposition<U>, val score:
 interface Evaluator<U> {
     fun evaluatePropositions(propositions:Set<Proposition<U>>):Set<PropositionEvaluation<U>>
 }
-

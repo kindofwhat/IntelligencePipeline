@@ -179,6 +179,17 @@ class TikaTxtDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy,
     }
 }
 
+@HasCapabilities(languageDetection)
+class TikaChunkLanguageDetection() :ChunkMetadataProducer {
+    override val name: String="tika-lang-chunk"
+    override fun metadataFor(chunk: Chunk): Metadata {
+        if(StringUtils.isNotEmpty(chunk.content)) {
+            return Metadata(values = mapOf("lang" to LanguageIdentifier(chunk.content).language), createdBy = name)
+        }
+        return Metadata()
+    }
+}
+
 /**
  * Does 2 things at once:
  * <ul>
