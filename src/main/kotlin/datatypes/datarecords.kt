@@ -13,6 +13,16 @@ data class Chunk(val type:ChunkType=ChunkType.GENERAL, val command:ChunkCommand=
 
 
 
+
+
+enum class BaseCommand { INSERT, UPDATE, UPSERT, DELETE }
+
+enum class DataRecordCommand {
+    CREATE, UPSERT, DELETE, UPSERT_METADATA, DELETE_METADATA, UPSERT_DOCUMENT_REPRESENTATION,
+    DELETE_DOCUMENT_REPRESENTATION
+}
+
+
 /**
  * describes a meta datum, which has been created by e.g. a parser of a file
  */
@@ -26,14 +36,9 @@ data class Metadata(val values:Map<String,String> = mutableMapOf(), val createdB
 data class DocumentRepresentation(val path:String="",
                                   var createdBy: String=NoOpIngestor().name)
 
-
-enum class BaseCommand { INSERT, UPDATE, UPSERT, DELETE }
-
-enum class DataRecordCommand {
-    CREATE, UPSERT, DELETE, UPSERT_METADATA, DELETE_METADATA, UPSERT_DOCUMENT_REPRESENTATION,
-    DELETE_DOCUMENT_REPRESENTATION
-}
-
+/**
+ * this is our main domain object.
+ */
 @Serializable
 data class DataRecord(val name: String="",
                       val representation: DocumentRepresentation= DocumentRepresentation(),
