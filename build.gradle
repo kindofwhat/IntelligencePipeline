@@ -49,6 +49,7 @@ configure(subprojects.findAll {it.name != 'ui' && it.name != 'model'})  {
 
     dependencies {
         compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+
         compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:0.19.3'
         compile 'org.jetbrains.kotlinx:kotlinx-coroutines-reactive:0.19.3'
         compile "org.jetbrains.kotlinx:kotlinx-serialization-runtime:$serialization_version"

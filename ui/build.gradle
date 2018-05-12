@@ -49,8 +49,8 @@ dependencies {
     compile "com.egorzh.networkinkt:networkinkt-js:$networkinkt_version"
 }
 
-sourceSets {
-    main.kotlin.srcDirs += project(':model').file('src/main/kotlin')
+dependencies {
+    expectedBy  project(':model')
 }
 kotlinFrontend {
     npm {
