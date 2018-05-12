@@ -1,2 +1,6 @@
 rootProject.name = 'IntelligencePipeline'
+include 'model'
+include 'service'
+include 'ui'
+include 'pipeline'
 

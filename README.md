@@ -1,14 +1,14 @@
 # Intelligence Pipeline - Goals
 * provide a fast and persistent data pipeline for documents
 * be as open as possible for modern data analytics/machine learning/AI frameworks
-* gather as much information as possible of documents
+    * make use of those frameworks, do not try to reproduce them
+    * make them comparable by storing the results in a comparable format
+* gather as much information as possible about documents
     * Metadata
     * Authorization
     * inner structure
     * relations
     * categories
-* have a way to compare and weight the results of the different frameworks, e.g. LanuageDetection by Apache Tika and Google
-
 
 # Path chosen
 * be open source
@@ -46,13 +46,6 @@ pipeline?.registerIngestor(DirectoryIngestor("src/test/resources"))
 
 # Open questions
 
-## Domain Design: Inner structure of documents
-How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens) be designed in a streaming enivonrment?
-
-==> at the moment: ChunkProducer
-
-==> do not keep the whole text within kafka as one block, but use messages to describe the structure (e.g. "ADD SENTENCE")
-
 ## logic of changes to source data and enrichment
 * Use case 1: Two Metadata-Producer produce independent and maybe conflicting data ==> there has to be a possibility to 
 know about those conflicting results and act accordingly (e.g. choose one, or an average)
@@ -77,19 +70,20 @@ for systems where the second, better producer cannot work efficiently with large
 
 
 ### Done
-- [x]  robust exception handling: test with a rogue MetadataProducer
-- [x]  Quickstart Guide
-- [x]  Finer Domain Model: Sentences, Token, etc
+- [x] robust exception handling: test with a rogue MetadataProducer
+- [x] Quickstart Guide
+- [x] Finer Domain Model: Sentences, Token, etc
 - [x] Participiants, Capabilities and requirements
 - [x] check that it's running with local cluster
 - [x] Keep represenation off kafka (simple file handling)
-- [x]  make it available on Github
-- [x]  Basic result reporting
+- [x] make it available on Github
+- [x] Basic result reporting
 
 ## V0.2: Check all use cases with Kafka
 
 ### Open
 - [ ] uberjar or something similar
+- [ ] simple regex based keyword extraction
 - [ ] make it available online somewhere
 - [ ] Multiple IP in parallel
 - [ ] Ingestion is on schedule
@@ -122,3 +116,13 @@ Have different frameworks compete and have means to select/evaluate the best pos
 
 
 ### Done
+
+
+#Design Considerations
+## Domain Design: Inner structure of documents
+How can the inner structure (i.e. sections, paragraphs, sentences, words, tokens) be designed in a streaming enivonrment?
+
+==> at the moment: Chunks
+
+==> do not keep the whole text within kafka as one block, but use messages to describe the structure (e.g. "ADD SENTENCE")
+
