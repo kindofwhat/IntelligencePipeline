@@ -1,7 +1,5 @@
 package facts
 
-import datatypes.DataRecord
-
 
 /**
  * A proposition about @val proposal with the confidence, where 0 is totally unsure and 1.0 is 100% sure

@@ -1,7 +1,5 @@
 package unittests
 
-import datatypes.DataRecord
-import datatypes.DocumentRepresentation
 import kotlinx.coroutines.experimental.runBlocking
 import org.junit.Ignore
 import org.junit.Test

@@ -1,7 +1,6 @@
 package participants
 
 import com.github.kittinunf.fuel.httpPost
-import datatypes.*
 import edu.stanford.nlp.ling.CoreAnnotations
 import edu.stanford.nlp.pipeline.Annotation
 import edu.stanford.nlp.pipeline.StanfordCoreNLP
@@ -17,8 +16,6 @@ import org.apache.commons.codec.digest.DigestUtils
 import org.apache.commons.lang.StringUtils
 import org.apache.tika.io.NullOutputStream
 import org.apache.tika.language.LanguageIdentifier
-import org.apache.tika.language.detect.LanguageDetector
-import org.apache.tika.language.detect.LanguageResult
 import org.apache.tika.parser.AutoDetectParser
 import org.apache.tika.sax.ToHTMLContentHandler
 import org.apache.tika.sax.ToTextContentHandler

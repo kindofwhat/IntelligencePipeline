@@ -1,9 +1,8 @@
-package com.example
+package org.ip.example
 
 import pl.treksoft.kvision.hmr.ApplicationBase
 import pl.treksoft.kvision.panel.Root
 import pl.treksoft.kvision.panel.SimplePanel.Companion.simplePanel
-import pl.treksoft.kvision.panel.SplitPanel.Companion.splitPanel
 import pl.treksoft.kvision.require
 import pl.treksoft.kvision.utils.vh
 

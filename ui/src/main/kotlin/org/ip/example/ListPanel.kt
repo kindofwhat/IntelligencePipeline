@@ -1,4 +1,4 @@
-package com.example
+package org.ip.example
 
 import pl.treksoft.kvision.core.FontStyle
 import pl.treksoft.kvision.data.DataContainer

@@ -1,8 +1,5 @@
 package integrationtests
 
-import datatypes.Chunk
-import datatypes.DataRecord
-import datatypes.Metadata
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.runBlocking
@@ -15,9 +12,7 @@ import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.state.QueryableStoreTypes
-import org.jboss.netty.channel.Channels.future
 import org.junit.*
-import org.junit.Assert.assertEquals
 import participants.file.*
 import participants.*
 import pipeline.IntelligencePipeline

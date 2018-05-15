@@ -1,11 +1,7 @@
 package participants
 
-import datatypes.*
-import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.SendChannel
-import pipeline.capabilities.CapabilityLookup
 import pipeline.capabilities.CapabilityLookupStrategy
-import pipeline.capabilities.CapabilityRegistry
 
 /**
  * marker interface for participant

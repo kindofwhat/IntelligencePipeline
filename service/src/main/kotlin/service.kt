@@ -1,12 +1,14 @@
 import datatypes.DocumentRepresentation
+import commands.StartPipeline
 import io.javalin.Javalin
 import kotlinx.serialization.json.JSON
 import participants.*
 import participants.file.*
 import pipeline.IntelligencePipeline
 
+var  pipeline: IntelligencePipeline?  =null //= IntelligencePipeline()
+
 fun main(args: Array<String>) {
-    val pipeline: IntelligencePipeline //= IntelligencePipeline()
 
     val app =   Javalin.create().apply {
         port(7000)
@@ -20,7 +22,7 @@ fun main(args: Array<String>) {
         get("/") { ctx -> ctx.result("Hello World7") }
         get("/test") { ctx -> ctx.result(JSON.stringify(DocumentRepresentation("path", "test"))) }
         post("/startPipeline") { ctx ->
-            startPipeline(ctx.param("bootstrap"),"tmp")
+            startPipeline( JSON.parse(ctx.body()?:"") as StartPipeline)
         }
         post("/stopPipeline") { ctx ->
             stopPipeline()
@@ -31,12 +33,13 @@ fun main(args: Array<String>) {
 }
 
 fun stopPipeline() {
-
-    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    pipeline?.stop()
 }
 
-fun startPipeline(boostrap: String?, dir: String) {
-    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+fun startPipeline(command: StartPipeline) {
+    pipeline = createPipeline(command.bootstrap, command.stateDirectory,
+            listOf(DirectoryIngestor(command.scanDirectory)), emptyList())
+    pipeline?.run()
 }
 
 
@@ -44,11 +47,12 @@ fun createPipeline(hostUrl:String, stateDir:String, ingestors: List<PipelineInge
     val pipeline = IntelligencePipeline(hostUrl, stateDir,"testPipeline")
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
-//            pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
+    pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
+/*
     pipeline.registerSideEffect("filewriter", {key, value ->
         fileRepresentationStrategy("out/test",value,"json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }
     } )
-
+*/
     pipeline.registry.register(FileOriginalContentCapability())
 
     pipeline.registry.register(FileTxtOutputProvider("out/test"))

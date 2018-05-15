@@ -1,6 +1,5 @@
 package pipeline.capabilities
 
-import datatypes.DataRecord
 import kotlin.reflect.KClass
 import kotlin.reflect.full.allSuperclasses
 

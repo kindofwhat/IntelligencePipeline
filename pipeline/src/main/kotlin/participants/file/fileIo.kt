@@ -1,6 +1,5 @@
 package participants.file
 
-import datatypes.DataRecord
 import pipeline.capabilities.*
 import java.io.File
 import java.io.InputStream

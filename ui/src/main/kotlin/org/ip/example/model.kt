@@ -1,4 +1,4 @@
-package com.example
+package org.ip.example
 
 import com.lightningkite.kotlin.observable.list.ObservableList
 import com.lightningkite.kotlin.observable.list.observableListOf

@@ -1,11 +1,5 @@
 package pipeline.capabilities
 
-import datatypes.DataRecord
-import kotlinx.io.InputStream
-import participants.PipelineSideEffect
-import java.io.OutputStream
-import java.io.Writer
-
 
 const val languageDetection = "languageDetection"
 

@@ -1,4 +1,4 @@
-package com.example
+package org.ip.example
 
 import pl.treksoft.kvision.form.FormPanel
 import pl.treksoft.kvision.form.FormPanel.Companion.formPanel

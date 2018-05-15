@@ -1,4 +1,4 @@
-package com.example
+package org.ip.example
 
 import pl.treksoft.kvision.hmr.ApplicationBase
 import pl.treksoft.kvision.hmr.module
