@@ -1,0 +1,52 @@
+buildscript {
+    ext.karibudsl_version = '0.4.3'
+    ext.vaadin10_version = '10.0.0.beta10'
+}
+
+
+plugins {
+    id "org.gretty" version "2.1.0"
+    id "io.spring.dependency-management" version "1.0.4.RELEASE"  // remove when https://github.com/gradle/gradle/issues/4417 is fixed
+}
+apply plugin: 'war'
+apply plugin: 'kotlinx-serialization'
+
+task explodedWar(type: Sync) {
+    into "$buildDir/libs/exploded/ui-vok.war"
+    with war
+}
+
+war.dependsOn explodedWar
+
+repositories {
+    jcenter()  // because of Gretty
+    maven { url 'https://maven.vaadin.com/vaadin-addons' }
+    maven { url 'https://maven.vaadin.com/vaadin-prereleases' }
+    maven { url "https://dl.bintray.com/mvysny/github" }
+}
+
+gretty {
+    contextPath = ''
+}
+
+dependencyManagement {
+    imports { mavenBom "com.vaadin:vaadin-bom:$vaadin10_version" }
+}
+
+
+dependencies {
+    compile project(':pipeline')
+    compile('javax:javaee-api:7.0')
+    compile("com.github.vok.karibudsl:karibu-dsl-v10:0.4.2")
+//    providedCompile 'javax.servlet:javax.servlet-api:3.1.0'
+
+    // logging
+    // currently we are logging through the SLF4J API to LogBack. See src/main/resources/logback.xml file for the logger configuration
+    compile 'ch.qos.logback:logback-classic:1.2.3'
+    compile 'org.slf4j:slf4j-api:1.7.25'
+    // test support
+    testCompile "com.github.kaributesting:karibu-testing-v10:0.4.14"
+    testCompile "com.github.mvysny.dynatest:dynatest:0.8"
+
+}
+

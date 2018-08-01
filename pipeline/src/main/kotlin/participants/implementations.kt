@@ -1,6 +1,7 @@
 package participants
 
 import com.github.kittinunf.fuel.httpPost
+import datatypes.DataRecord
 import edu.stanford.nlp.ling.CoreAnnotations
 import edu.stanford.nlp.pipeline.Annotation
 import edu.stanford.nlp.pipeline.StanfordCoreNLP
@@ -8,6 +9,7 @@ import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations
 import edu.stanford.nlp.trees.TreeCoreAnnotations
 import facts.Proposer
 import facts.Proposition
+import facts.PropositionType
 import kotlinx.coroutines.experimental.channels.SendChannel
 import kotlinx.io.InputStream
 import kotlinx.serialization.Serializable
@@ -187,6 +189,7 @@ class TikaChunkLanguageDetection() :ChunkMetadataProducer {
     }
 }
 
+class Language(result:String): PropositionType<String>("language", result)
 /**
  * Does 2 things at once:
  * <ul>
@@ -199,11 +202,12 @@ class TikaChunkLanguageDetection() :ChunkMetadataProducer {
 class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
         MetadataProducer,
         Capability<String?>,
-        Proposer<datatypes.DataRecord,String> {
+        Proposer<DataRecord, Language> {
 
-    override fun propose(proposedFor: datatypes.DataRecord): Proposition<String> {
+    override fun propose(proposedFor: datatypes.DataRecord): Proposition<Language> {
         val detected = extractLang(proposedFor)
-        return Proposition(detected?:"",1.0f)
+        val confidence =if(detected == null) 0.0f else 1.0f
+        return Proposition(Language(result= detected ?: ""), confidence)
     }
 
     override val name = "tika-metadata"

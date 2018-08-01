@@ -10,6 +10,7 @@ import com.egorzh.networkinkt.*
 import commands.StartPipeline
 import kotlinx.coroutines.experimental.async
 import kotlinx.serialization.json.JSON
+import org.w3c.dom.WebSocket
 
 
 //data class PipelineModel(val bootstrap: String?)
@@ -38,6 +39,10 @@ object ActionPanel : SimplePanel() {
                     HTTP.post("http://localhost:7000/stopPipeline").send()
                 }
             })
+
+            val ws = WebSocket("ws://localhost:7000/websocket/datarecord")
+
+            ws.onmessage = { event -> println(JSON.parse(event.toString()))}
 
         }
 

@@ -1,5 +1,6 @@
-package pipeline
+package pipeline.impl
 
+import facts.Proposer
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.consumeEach
@@ -31,7 +32,8 @@ import java.util.*
 
 
 
-class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicationId:String ="IntelligencePipeline") {
+class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicationId:String ="KafkaIntelligencePipeline"): pipeline.IIntelligencePipeline {
+
     companion object {
         val DOCUMENTREPRESENTATION_INGESTION_TOPIC = "document-representation-ingestion"
         val DOCUMENTREPRESENTATION_EVENT_TOPIC = "document-representation-event"
@@ -41,7 +43,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         val CHUNK_TOPIC = "chunk"
     }
 
-    val registry=DefaultCapabilityRegistry()
+    override val registry=DefaultCapabilityRegistry()
     val ingestionProducer: Producer<Long, ByteArray>
     val streamsConfig = Properties()
     var streams:KafkaStreams? = null
@@ -62,7 +64,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         key, record -> cache.put(key,record)
     }
 */
-    fun all():List<datatypes.DataRecord> {
+    override fun all():List<datatypes.DataRecord> {
         for(i in 0..5) {
             try {
                 val iter =streams?.store(dataRecordTable.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, datatypes.DataRecord>())
@@ -104,7 +106,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
     /**
      * creates an own stream for this producer and starts it
      */
-    fun registerChunkMetadataProducer(producer: ChunkMetadataProducer) {
+    override fun registerChunkMetadataProducer(producer: ChunkMetadataProducer) {
         val builder = StreamsBuilder()
 
         //the generic datarecord stream
@@ -131,7 +133,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
      /**
      * creates an own stream for this producer and starts it
      */
-    fun registerChunkProducer(name:String,chunkProducer: ChunkProducer) {
+    override fun registerChunkProducer(name:String,chunkProducer: ChunkProducer) {
         val builder = StreamsBuilder()
 
         //the generic datarecord stream
@@ -161,7 +163,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
     /**
      * creates an own stream for this producer and starts it
      */
-    fun registerSideEffect(name:String, sideEffect: PipelineSideEffect) {
+    override fun registerSideEffect(name:String, sideEffect: PipelineSideEffect) {
         val builder = StreamsBuilder()
 
         //the generic datarecord stream
@@ -185,10 +187,13 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         subStreams.add(streams)
     }
 
+    override fun <I, U> registerProposer(prod: Proposer<I, U>) {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
     /**
      * creates an own stream for this producer and starts it
      */
-    fun registerMetadataProducer(prod: MetadataProducer) {
+    override fun registerMetadataProducer(prod: MetadataProducer) {
         val builder = StreamsBuilder()
 
         //the generic datarecord stream
@@ -235,7 +240,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         }
     }
 
-    fun registerDocumentRepresentationProducer(prod: DocumentRepresentationProducer) {
+    override fun registerDocumentRepresentationProducer(prod: participants.DocumentRepresentationProducer) {
         val builder = StreamsBuilder()
         //the generic datarecord stream
         val datarecordStream = builder.stream<Long, datatypes.DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
@@ -265,7 +270,7 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         subStreams.add(streams)
     }
 
-    fun registerIngestor(ingestor: PipelineIngestor) {
+    override fun registerIngestor(ingestor: participants.PipelineIngestor) {
         ingestors.add(ingestor)
         async {
             log("start ingestor ")
@@ -274,12 +279,12 @@ class IntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicat
         }
     }
 
-    fun stop() {
+    override fun stop() {
         subStreams.forEach { it.close()}
         streams?.close()
     }
 
-    fun run() {
+    override fun run() {
         launch {
             //doesn't work: somehow produces null values, and I don't know why...
 

@@ -4,9 +4,9 @@ import io.javalin.Javalin
 import kotlinx.serialization.json.JSON
 import participants.*
 import participants.file.*
-import pipeline.IntelligencePipeline
+import pipeline.impl.KafkaIntelligencePipeline
 
-var  pipeline: IntelligencePipeline?  =null //= IntelligencePipeline()
+var  pipeline: KafkaIntelligencePipeline?  =null //= KafkaIntelligencePipeline()
 
 fun main(args: Array<String>) {
 
@@ -22,7 +22,7 @@ fun main(args: Array<String>) {
         get("/") { ctx -> ctx.result("Hello World7") }
         get("/test") { ctx -> ctx.result(JSON.stringify(DocumentRepresentation("path", "test"))) }
         post("/startPipeline") { ctx ->
-            startPipeline( JSON.parse(ctx.body()?:"") as StartPipeline)
+            startPipeline( JSON.parse(ctx.body()?:"") as StartPipeline, app)
         }
         post("/stopPipeline") { ctx ->
             stopPipeline()
@@ -36,18 +36,30 @@ fun stopPipeline() {
     pipeline?.stop()
 }
 
-fun startPipeline(command: StartPipeline) {
+fun startPipeline(command: StartPipeline, app:Javalin) {
     pipeline = createPipeline(command.bootstrap, command.stateDirectory,
-            listOf(DirectoryIngestor(command.scanDirectory)), emptyList())
+            listOf(DirectoryIngestor(command.scanDirectory)), emptyList(),app)
     pipeline?.run()
 }
 
 
-fun createPipeline(hostUrl:String, stateDir:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): IntelligencePipeline {
-    val pipeline = IntelligencePipeline(hostUrl, stateDir,"testPipeline")
+fun createPipeline(hostUrl:String, stateDir:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>, app:Javalin): KafkaIntelligencePipeline {
+    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline1")
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
-    pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
+//    pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
+
+    pipeline.registerSideEffect("websocket-datarecord", { key, value ->
+        val ws = app.ws("/websocket/datarecord") { ws ->
+            ws.onConnect { session ->
+                println("Connected to datarecord websocket")
+                session.remote.sendString( JSON.stringify(value))
+            }
+            ws.onClose { session, statusCode, reason -> println("Closed") }
+            ws.onError { session, throwable -> println("Errored $throwable") }
+            ws.onMessage { session, msg -> session.remote.sendString( JSON.stringify(value))}
+        }
+    })
 /*
     pipeline.registerSideEffect("filewriter", {key, value ->
         fileRepresentationStrategy("out/test",value,"json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }

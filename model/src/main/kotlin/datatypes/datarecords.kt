@@ -1,6 +1,8 @@
 package datatypes
 
 import kotlinx.serialization.Serializable
+import facts.PropositionScore
+import  facts.Proposition
 enum class ChunkCommand { START, ADD, APPEND,
     INSERT,UPDATE,MERGE, DELETE, LAST }
 enum class ChunkType { GENERAL, PAGE, PARAGRAPH,SENTENCE,WORD }
@@ -37,7 +39,9 @@ data class DocumentRepresentation(val path:String="",
 data class DataRecord(val name: String="",
                       val representation: DocumentRepresentation = DocumentRepresentation(),
                       val additionalRepresentations: Set<DocumentRepresentation> = mutableSetOf(),
-                      val meta: Set<Metadata> = mutableSetOf())
+                      val meta: Set<Metadata> = mutableSetOf(),
+                      val propositions: Set<Proposition<*>> = mutableSetOf())
+
 
 interface Event<C,P>
 @Serializable data class DataRecordEvent(val command: DataRecordCommand = DataRecordCommand.UPSERT, val record: DataRecord = DataRecord()): Event<BaseCommand, DataRecord>

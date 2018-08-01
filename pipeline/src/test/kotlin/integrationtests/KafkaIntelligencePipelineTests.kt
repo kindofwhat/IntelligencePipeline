@@ -15,23 +15,21 @@ import org.apache.kafka.streams.state.QueryableStoreTypes
 import org.junit.*
 import participants.file.*
 import participants.*
-import pipeline.IntelligencePipeline
-import pipeline.IntelligencePipeline.Companion.CHUNK_TOPIC
-import pipeline.IntelligencePipeline.Companion.DATARECORD_CONSOLIDATED_TOPIC
-import pipeline.IntelligencePipeline.Companion.METADATA_EVENT_TOPIC
-import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_TOPIC
-import pipeline.IntelligencePipeline.Companion.DATARECORD_EVENT_TOPIC
-import pipeline.IntelligencePipeline.Companion.DOCUMENTREPRESENTATION_EVENT_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline
+import pipeline.impl.KafkaIntelligencePipeline.Companion.CHUNK_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline.Companion.DATARECORD_CONSOLIDATED_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline.Companion.METADATA_EVENT_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline.Companion.DATARECORD_EVENT_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline.Companion.DOCUMENTREPRESENTATION_EVENT_TOPIC
 import pipeline.serialize.KotlinSerde
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.Paths
 import java.util.*
 
 
-class IntelligencePipelineTests {
-
-
-
+class KafkaIntelligencePipelineTests {
     companion object {
         val embeddedMode = true
         fun deleteDir(file: File) {
@@ -45,29 +43,32 @@ class IntelligencePipelineTests {
         }
         val cluster:EmbeddedKafkaCluster = EmbeddedKafkaCluster(1)
         val streamsConfig = Properties()
-        val stateDir = "build/test/state"
+        val baseDir = File(".").absolutePath
+
+        val testDir = "$baseDir/out/test"
+        val stateDir = "$baseDir/out/state"
         var hostUrl = "localhost:8080"
 
         class DataRecordSerde() : KotlinSerde<datatypes.DataRecord>(datatypes.DataRecord::class.java)
 
-        fun createPipeline(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): IntelligencePipeline {
-            val pipeline = IntelligencePipeline(hostUrl, stateDir,"testPipeline")
+        fun createPipeline(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): KafkaIntelligencePipeline {
+            val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline")
             ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
             producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
 //            pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
             pipeline.registerSideEffect("filewriter", {key, value ->
-                fileRepresentationStrategy("out/test",value,"json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }
+                fileRepresentationStrategy(testDir,value,"json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }
             } )
 
             pipeline.registry.register(FileOriginalContentCapability())
 
-            pipeline.registry.register(FileTxtOutputProvider("out/test"))
-            pipeline.registry.register(FileTxtStringProvider("out/test"))
-            pipeline.registry.register(FileSimpleTextOutPathCapability("out/test"))
+            pipeline.registry.register(FileTxtOutputProvider(testDir))
+            pipeline.registry.register(FileTxtStringProvider(testDir))
+            pipeline.registry.register(FileSimpleTextOutPathCapability(testDir))
 
-            pipeline.registry.register(FileHtmlOutputProvider("out/test"))
-            pipeline.registry.register(FileHtmlStringProvider("out/test"))
-            pipeline.registry.register(FileHtmlTextOutPathCapability("out/test"))
+            pipeline.registry.register(FileHtmlOutputProvider(testDir))
+            pipeline.registry.register(FileHtmlStringProvider(testDir))
+            pipeline.registry.register(FileHtmlTextOutPathCapability(testDir))
 
             pipeline.registerDocumentRepresentationProducer(TikaTxtDocumentRepresentationProducer(pipeline.registry))
             pipeline.registerDocumentRepresentationProducer(TikaHtmlDocumentRepresentationProducer(pipeline.registry))
@@ -112,7 +113,11 @@ class IntelligencePipelineTests {
         @BeforeClass @JvmStatic
         fun startup() {
             //embedded instance
-            deleteDir(File("out/test"))
+            if(Files.exists(Paths.get(testDir))) {
+                deleteDir(File(testDir))
+            }
+            Files.createDirectories(Paths.get(testDir))
+            Files.createDirectories(Paths.get(stateDir))
             if(embeddedMode) {
                 /*
                 cluster.createTopic(DOCUMENTREPRESENTATION_INGESTION_TOPIC)
@@ -123,14 +128,14 @@ class IntelligencePipelineTests {
                 cluster.start()
                 cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_EVENT_TOPIC,METADATA_EVENT_TOPIC,DATARECORD_EVENT_TOPIC, CHUNK_TOPIC, DATARECORD_CONSOLIDATED_TOPIC)
                 hostUrl = cluster.bootstrapServers()
-                //pipeline = IntelligencePipeline(cluster.bootstrapServers(), stateDir)
+                //pipeline = KafkaIntelligencePipeline(cluster.bootstrapServers(), stateDir)
                 println("starting embedded kafka cluster with zookeeper ${cluster.zKConnectString()} and bootstrapServes ${cluster.bootstrapServers()}" )
                 streamsConfig.put("bootstrap.servers", cluster.bootstrapServers())
 
             } else {
                 hostUrl = "liu:9092"
                 println("starting with running kafka cluster at " + hostUrl)
-                //pipeline = IntelligencePipeline(hostUrl, stateDir)
+                //pipeline = KafkaIntelligencePipeline(hostUrl, stateDir)
                 streamsConfig.put("bootstrap.servers", hostUrl)
 
             }
@@ -138,7 +143,7 @@ class IntelligencePipelineTests {
 
             //running instance
             /*
-            pipeline = IntelligencePipeline("liu:9092")
+            pipeline = KafkaIntelligencePipeline("liu:9092")
             streamsConfig.put("bootstrap.servers", "liu:9092")
             */
             streamsConfig.put("auto.offset.reset", "earliest")
@@ -150,7 +155,7 @@ class IntelligencePipelineTests {
             streamsConfig.put("cache.max.bytes.buffering", 0)
             streamsConfig.put("internal.leave.group.on.close", true)
             streamsConfig.put("commit.interval.ms", 100)
-            streamsConfig.put("application.id", "IntelligencePipelineTests")
+            streamsConfig.put("application.id", "KafkaIntelligencePipelineTests")
             streamsConfig.put("delete.topic.enable", "true")
 
 
@@ -161,6 +166,8 @@ class IntelligencePipelineTests {
     @Test
     @Throws(Exception::class)
     fun testRogueMetadataProducer() {
+        println("baseDir is $baseDir")
+
         class RogueMetadataProducer() :MetadataProducer {
             override val name="rogue";
             override fun metadataFor(record: datatypes.DataRecord): datatypes.Metadata {
@@ -170,7 +177,7 @@ class IntelligencePipelineTests {
 
         val name = "testRogueMetadataProducer"
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList<MetadataProducer>())
 
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
         pipeline.registerMetadataProducer(RogueMetadataProducer())
@@ -203,7 +210,7 @@ class IntelligencePipelineTests {
         val name = "testHashMetadataProducer"
 
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList())
+                listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList())
 
         pipeline.registerMetadataProducer(HashMetadataProducer())
 
@@ -219,7 +226,7 @@ class IntelligencePipelineTests {
         val name = "testStanfordNlpParser"
 
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList<MetadataProducer>())
 
         val nlpParserProducer = StanfordNlpParserProducer(pipeline.registry)
         val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)
@@ -235,7 +242,7 @@ class IntelligencePipelineTests {
     fun testDirectoryCrawlAndTikaChunkLanguageDetection() {
         val name = "testDirectoryCrawlAndTikaChunkLanguageDetection"
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList<MetadataProducer>())
 
         pipeline.registerChunkMetadataProducer(TikaChunkLanguageDetection())
 
@@ -249,7 +256,7 @@ class IntelligencePipelineTests {
     fun testDirectoryCrawlAndTika() {
         val name = "testDirectoryCrawlAndTika"
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("src/test/resources/testresources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList<MetadataProducer>())
 
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
 
@@ -259,10 +266,10 @@ class IntelligencePipelineTests {
     }
 
 
-     fun runPipeline(pipeline: IntelligencePipeline,
+     fun runPipeline(pipeline: KafkaIntelligencePipeline,
                      predicate: (datatypes.DataRecord) -> Boolean,
                      expectedResults:Int,
-                     timeout:Long = 40000L): List<datatypes.DataRecord> {
+                     timeout:Long = 10000L): List<datatypes.DataRecord> {
         var view = emptyList<datatypes.DataRecord>()
         runBlocking {
             val job = launch {

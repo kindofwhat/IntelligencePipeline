@@ -66,7 +66,6 @@ for systems where the second, better producer cannot work efficiently with large
 ## V0.1: make it available on Github
 
 ### Open
-- [ ]  Good test coverage
 
 
 ### Done
@@ -74,14 +73,18 @@ for systems where the second, better producer cannot work efficiently with large
 - [x] Quickstart Guide
 - [x] Finer Domain Model: Sentences, Token, etc
 - [x] Participiants, Capabilities and requirements
-- [x] check that it's running with local cluster
+- [x] check that it is running with local cluster
 - [x] Keep represenation off kafka (simple file handling)
 - [x] make it available on Github
 - [x] Basic result reporting
+- [x]  acceptable test coverage
+- [x] very basic GUI
+- [x] simple pipeline with in memory map
 
-## V0.2: Check all use cases with Kafka
+## V0.2: 
 
 ### Open
+- [ ] Update to Kafka 2.x, check its testing infrastructure
 - [ ] uberjar or something similar
 - [ ] simple regex based keyword extraction
 - [ ] make it available online somewhere
@@ -90,7 +93,7 @@ for systems where the second, better producer cannot work efficiently with large
 - [ ] Large file strategy: many metadata producers take too long, e.g. stanfordnlp => tokenize this
 - [ ] IP can be rescheduled
 - [ ] Intelligent reprocessing of Metadata
-- [ ] Basic GUI
+- [ ] better GUI
 - [ ] coroutines for MetadataProducers and where it makes sense
 
 

@@ -1,0 +1,10 @@
+repositories {
+    maven { url 'https://jitpack.io' }
+    maven {url "https://kotlin.bintray.com/ktor"}
+}
+
+dependencies {
+    compile project(':pipeline')
+    compile 'com.github.kwebio:kweb:0.3.0'
+    compile 'org.slf4j:slf4j-simple:1.6.1' // <-- or your favorite SLF4J logger binding
+}
