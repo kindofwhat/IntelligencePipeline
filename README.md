@@ -20,6 +20,24 @@
 
 # Quickstart
 1. Start a Kafka Cluster
+
+I have provided a docker-compose.yml file, which allows you to run a confluent kafka 
+stack as a docker swarm with the command
+```bash
+docker stack deploy -c docker-compose.yml my-confluent
+```
+Before doing that you have to change the lines
+```
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://cixin:9092
+      KAFKA_ADVERTISED_HOST_NAME: cixin
+```
+
+where you replace the value cixin with the name of your current host
+
+If you go this way, you will have to find out the container id of the image running the 
+ confluentinc/cp-kafka-rest:latest image ( e.g. ```docker ps```) and then execute the commands
+ provided in create_topics.txt in this directory
+ 
 2. Initialise an IntelligencePipeline
 ```kotlin
 val pipeline = IntelligencePipeline(bootstrapServers, stateDir)
