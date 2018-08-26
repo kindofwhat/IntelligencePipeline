@@ -1,6 +1,7 @@
 import participants.*
 import participants.file.*
 import pipeline.IIntelligencePipeline
+import pipeline.impl.KafkaIntelligencePipeline
 import pipeline.impl.MapIntelligencePipeline
 import java.io.File
 
@@ -8,8 +9,8 @@ import java.io.File
 fun createPipeline(hostUrl:String, stateDir:String,
                    ingestors: List<PipelineIngestor> = emptyList(),
                    producers:List<MetadataProducer> = emptyList()): IIntelligencePipeline {
-    //val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline1")
-    val pipeline = MapIntelligencePipeline()
+    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline1")
+    //val pipeline = MapIntelligencePipeline()
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
     pipeline.registerSideEffect("printer", { key, value -> println("$key: $value") })
@@ -27,7 +28,7 @@ fun createPipeline(hostUrl:String, stateDir:String,
     pipeline.registerDocumentRepresentationProducer(TikaTxtDocumentRepresentationProducer(pipeline.registry))
     pipeline.registerDocumentRepresentationProducer(TikaHtmlDocumentRepresentationProducer(pipeline.registry))
 
-    //pipeline.registerChunkProducer("sentenceProducer", StanfordNlpSentenceChunkProducer(pipeline.registry))
+    pipeline.registerChunkProducer("sentenceProducer", StanfordNlpSentenceChunkProducer(pipeline.registry))
 
 
     return pipeline

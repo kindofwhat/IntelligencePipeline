@@ -24,9 +24,10 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://cixin:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
       KAFKA_ADVERTISED_HOST_NAME: cixin
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CREATE_TOPICS: document-representation-ingestion:1:1,document-representation-event:1:1,metadata-event:1:1,datarecord-event:1:1,datarecord-consolidated:1:1,chunk:1:1
 
   schema-registry:
     image: confluentinc/cp-schema-registry:5.0.0-beta30
