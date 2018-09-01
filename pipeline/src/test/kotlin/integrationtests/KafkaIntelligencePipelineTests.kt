@@ -31,7 +31,7 @@ import java.util.*
 
 class KafkaIntelligencePipelineTests {
     companion object {
-        val embeddedMode = true
+        val embeddedMode = false
         fun deleteDir(file: File) {
             val contents = file.listFiles()
             if (contents != null) {
@@ -133,7 +133,7 @@ class KafkaIntelligencePipelineTests {
                 streamsConfig.put("bootstrap.servers", cluster.bootstrapServers())
 
             } else {
-                hostUrl = "liu:9092"
+                hostUrl = "localhost:29092"
                 println("starting with running kafka cluster at " + hostUrl)
                 //pipeline = KafkaIntelligencePipeline(hostUrl, stateDir)
                 streamsConfig.put("bootstrap.servers", hostUrl)
@@ -142,10 +142,6 @@ class KafkaIntelligencePipelineTests {
 
 
             //running instance
-            /*
-            pipeline = KafkaIntelligencePipeline("liu:9092")
-            streamsConfig.put("bootstrap.servers", "liu:9092")
-            */
             streamsConfig.put("auto.offset.reset", "earliest")
             // TODO("correct config for state.dir")
             streamsConfig.put("state.dir", Files.createTempDirectory("kafka").toAbsolutePath().toString())
@@ -269,7 +265,7 @@ class KafkaIntelligencePipelineTests {
      fun runPipeline(pipeline: KafkaIntelligencePipeline,
                      predicate: (datatypes.DataRecord) -> Boolean,
                      expectedResults:Int,
-                     timeout:Long = 10000L): List<datatypes.DataRecord> {
+                     timeout:Long = 20000L): List<datatypes.DataRecord> {
         var view = emptyList<datatypes.DataRecord>()
         runBlocking {
             val job = launch {

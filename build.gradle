@@ -18,6 +18,8 @@ buildscript {
     }
 }
 
+
+
 configure(subprojects.findAll {it.name != 'ui' && it.name != 'model'})  {
 
     apply plugin: 'kotlin-platform-jvm'
