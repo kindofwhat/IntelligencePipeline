@@ -1,7 +1,11 @@
 package participants
 
 import com.github.kittinunf.fuel.httpPost
+import com.google.cloud.language.v1.AnalyzeEntitiesRequest
+import com.google.cloud.language.v1.Document
+import com.google.cloud.language.v1.EncodingType
 import datatypes.DataRecord
+import datatypes.Metadata
 import edu.stanford.nlp.ling.CoreAnnotations
 import edu.stanford.nlp.pipeline.Annotation
 import edu.stanford.nlp.pipeline.StanfordCoreNLP
@@ -28,6 +32,7 @@ import java.io.File
 import java.io.OutputStream
 import java.util.*
 import kotlin.coroutines.experimental.buildSequence
+import com.google.cloud.language.v1.LanguageServiceClient
 
 
 class HashMetadataProducer() : MetadataProducer {
@@ -164,17 +169,17 @@ fun documentRepresenation(record: datatypes.DataRecord, textOutCapabilityName:St
 @RequiresCapabilities(originalContentIn,htmlTextOut, htmlTextOutPath)
 class TikaHtmlDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy, override val name:String = "tika-html"):DocumentRepresentationProducer {
     override fun documentRepresentationFor(record: datatypes.DataRecord): datatypes.DocumentRepresentation {
-        return documentRepresenation(record, htmlTextOut, htmlTextOutPath,lookup,"tika-html",
-                {out ->
-                    ToHTMLContentHandler(out,"utf-8")})
+        return documentRepresenation(record, htmlTextOut, htmlTextOutPath,lookup,"tika-html"
+        ) { out ->
+            ToHTMLContentHandler(out,"utf-8")}
     }
 }
 
 @RequiresCapabilities(originalContentIn, simpleTextOut, simpleTextOutPath)
 class TikaTxtDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy, override val name:String = "tika-txt"):DocumentRepresentationProducer {
     override fun documentRepresentationFor(record: datatypes.DataRecord): datatypes.DocumentRepresentation {
-        return documentRepresenation(record, simpleTextOut, simpleTextOutPath,lookup,"tika-txt",
-                {out ->  ToTextContentHandler(out,"utf-8")})
+        return documentRepresenation(record, simpleTextOut, simpleTextOutPath,lookup,"tika-txt"
+        ) { out ->  ToTextContentHandler(out,"utf-8")}
     }
 }
 
@@ -249,6 +254,29 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
         }
         if(metadataPipeline.size>0)  return datatypes.Metadata(metadataPipeline, name)
         else return datatypes.Metadata()
+    }
+}
+
+@RequiresCapabilities(simpleTextIn, languageDetection)
+class GoogleNLPMetadataProducer(val lookup: CapabilityLookupStrategy):CapabilityLookupStrategyMetadataProducer<String>(lookup) {
+    override val name = "google_nlp_metadata"
+    override fun metadataFor(record: DataRecord): Metadata {
+        val entities = mutableMapOf<String,String>()
+        val text:String? =lookup.lookup(simpleTextIn,record,String::class.java)
+        if(StringUtils.isNotEmpty( text)) {
+            val client = LanguageServiceClient.create()
+            val doc = Document.newBuilder()
+                    .setContent(text).setType(Document.Type.PLAIN_TEXT).build()
+            val analyzeRequest = AnalyzeEntitiesRequest.newBuilder()
+                    .setDocument(doc)
+                    .setEncodingType(EncodingType.UTF8)
+                    .build()
+            val analyseResponse = client.analyzeEntities(analyzeRequest)
+            analyseResponse.entitiesList.forEach{ entity ->
+                entities.put(entity.name,entity.type.name)
+            }
+        }
+        return Metadata(entities)
     }
 }
 
