@@ -6,7 +6,7 @@ import kotlinx.coroutines.experimental.runBlocking
 import kotlinx.coroutines.experimental.withTimeout
 import kotlinx.serialization.json.JSON
 import org.apache.kafka.common.serialization.Serdes
-import org.apache.kafka.streams.Consumed
+import org.apache.kafka.streams.kstream.Consumed
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster
@@ -31,7 +31,7 @@ import java.util.*
 
 class KafkaIntelligencePipelineTests {
     companion object {
-        val embeddedMode = false
+        val embeddedMode = true
         fun deleteDir(file: File) {
             val contents = file.listFiles()
             if (contents != null) {
@@ -265,17 +265,17 @@ class KafkaIntelligencePipelineTests {
      fun runPipeline(pipeline: KafkaIntelligencePipeline,
                      predicate: (datatypes.DataRecord) -> Boolean,
                      expectedResults:Int,
-                     timeout:Long = 20000L): List<datatypes.DataRecord> {
+                     timeout:Long = 60000L): List<datatypes.DataRecord> {
         var view = emptyList<datatypes.DataRecord>()
         runBlocking {
             val job = launch {
                 pipeline.run()
             }
             job.join()
-            delay(2000)
+            delay(5000)
             withTimeout(timeout) {
                 repeat@while(true) {
-                    delay(500L)
+                    delay(1000L)
                     view = pipeline.all().filter(predicate)
                     if(view.size >= expectedResults) {
                         break@repeat

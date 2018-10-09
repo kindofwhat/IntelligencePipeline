@@ -1,12 +1,10 @@
 package unittests
 
+import datatypes.DocumentRepresentation
 import kotlinx.coroutines.experimental.runBlocking
 import org.junit.Ignore
 import org.junit.Test
-import participants.AzureCognitiveServicesMetadataProducer
-import participants.StanfordNlpParserProducer
-import participants.TikaHtmlDocumentRepresentationProducer
-import participants.TikaMetadataProducer
+import participants.*
 import participants.file.*
 import pipeline.capabilities.DefaultCapabilityRegistry
 
@@ -73,4 +71,20 @@ class MetadataProducerTests {
         println(metadata)
         assert(metadata.values.size>0)
     }
+
+    /**
+     * to use this test, follow the instructions @ https://cloud.google.com/natural-language/docs/quickstart-client-libraries
+     */
+    @Ignore
+    fun testGoogleNlp() {
+        //set the api key here
+        val handler = GoogleNLPMetadataProducer(registry)
+        val dataRecord = datatypes.DataRecord(name = "testDataRecord",
+                representation = DocumentRepresentation("$pathIn/test3.docx"))
+                //representation = datatypes.DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
+        val metadata =  runBlocking { handler.metadataFor(dataRecord) }
+        println(metadata)
+        assert(metadata.values.size>0)
+    }
+
 }
