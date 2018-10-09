@@ -35,7 +35,7 @@ class KotlinDeserializer<T:Any>(obj: Class<T>) :Deserializer<T> {
     }
     override fun deserialize(topic: String?, data: ByteArray?): T? {
         if(data == null) return null
-        return JSON.parse( instance, String(data?:ByteArray(0)))
+        return JSON.parse( instance, String(data))
     }
     override fun configure(configs: MutableMap<String, *>?, isKey: Boolean) {
 
