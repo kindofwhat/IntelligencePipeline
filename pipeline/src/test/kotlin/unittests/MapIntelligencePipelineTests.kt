@@ -1,5 +1,7 @@
 package src.test.kotlin.unittests
 
+import datatypes.DataRecord
+import kotlinx.coroutines.experimental.channels.consumeEach
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.runBlocking
 import kotlinx.serialization.json.JSON
@@ -25,12 +27,16 @@ class MapIntelligencePipelineTests {
 
             delay(10000)
 
-            val all = pipeline.all()
+            val all = mutableListOf<DataRecord>()
+            pipeline.dataRecords().consumeEach {
+                all.add(it)
+            }
+
 
             assert(4 == all.size)
 
             assert (3 == all.filter { dataRecord ->  dataRecord.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer(pipeline.registry).name}}.size)
-            println(pipeline.all())
+            println(all)
 
         }
 

@@ -1,9 +1,12 @@
 package pipeline.impl
 
+import datatypes.DataRecord
 import facts.Proposer
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.channels.Channel
+import kotlinx.coroutines.experimental.channels.ReceiveChannel
 import kotlinx.coroutines.experimental.channels.consumeEach
+import kotlinx.coroutines.experimental.channels.produce
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.runBlocking
 import org.apache.commons.lang.StringUtils
@@ -17,6 +20,7 @@ import org.apache.kafka.streams.kstream.Consumed
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.StreamsBuilder
+import org.apache.kafka.streams.Topology
 import org.apache.kafka.streams.errors.InvalidStateStoreException
 import org.apache.kafka.streams.kstream.KTable
 import org.apache.kafka.streams.kstream.Materialized
@@ -64,20 +68,23 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         key, record -> cache.put(key,record)
     }
 */
-    override fun all():List<datatypes.DataRecord> {
-        for(i in 0..5) {
-            try {
-                val iter =streams?.store(dataRecordTable.queryableStoreName(), QueryableStoreTypes.keyValueStore<Long, datatypes.DataRecord>())
-                        ?.all()
-                val res = iter?.asSequence()?.toList()?.map { keyValue ->  keyValue.value}?: emptyList()
-                iter?.close()
-                return res
-            }catch(ex: InvalidStateStoreException) {
-                log("Error retrieving store $ex")
-                Thread.sleep(1000)
-            }
-        }
-        return emptyList()
+
+    override fun dataRecords(): ReceiveChannel<DataRecord> {
+
+        val builder = StreamsBuilder()
+
+        val channel= Channel<DataRecord>()
+        builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC, Consumed.with(Serdes.LongSerde(),
+                KotlinSerde(datatypes.DataRecord::class.java))).foreach{ key, value ->  async {  channel.send(value)} }
+        val topology = builder.build()
+
+        val myProp = Properties()
+        myProp.putAll(streamsConfig)
+        myProp.put("application.id", applicationId + "_dataRecords")
+        val streams = KafkaStreams(topology, myProp )
+        this.subStreams.add(streams)
+        streams.start()
+        return channel
     }
 
     init {
@@ -378,7 +385,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
 
         val topology = builder.build()
 
-        println(topology.describe().toString())
+        log(topology.describe().toString())
         val streams = KafkaStreams(topology, streamsConfig)
 
         return streams

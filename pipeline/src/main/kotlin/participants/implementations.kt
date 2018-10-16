@@ -188,7 +188,7 @@ class TikaChunkLanguageDetection() :ChunkMetadataProducer {
     override val name: String="tika-lang-chunk"
     override fun metadataFor(chunk: datatypes.Chunk): datatypes.Metadata {
         if(StringUtils.isNotEmpty(chunk.content)) {
-            return datatypes.Metadata(values = mapOf("lang" to LanguageIdentifier(chunk.content).language), createdBy = name)
+            return datatypes.Metadata(values = mapOf(LanguageIdentifier(chunk.content).language to chunk.content), createdBy = name)
         }
         return datatypes.Metadata()
     }

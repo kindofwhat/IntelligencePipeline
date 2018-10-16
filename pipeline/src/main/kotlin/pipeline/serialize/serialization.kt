@@ -28,7 +28,7 @@ class KotlinSerializer<T:Any> :Serializer<T?> {
     override fun close() {}
 }
 
-class KotlinDeserializer<T:Any>(obj: Class<T>) :Deserializer<T> {
+class KotlinDeserializer<T:Any>(obj: Class<T>):Deserializer<T> {
     private var instance:KSerializer<out T> = obj.newInstance()::class.serializer()
     companion object {
         val CLASSNAME= "CLASSNAME"

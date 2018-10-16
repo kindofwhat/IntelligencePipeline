@@ -87,6 +87,7 @@ configure(subprojects.findAll {it.name != 'ui' && it.name != 'model'})  {
         testCompile "org.apache.kafka:kafka-clients:$kafka_version:test"
         testCompile "org.apache.kafka:kafka-streams:$kafka_version:test"
         testCompile "org.apache.kafka:kafka-streams-test-utils:$kafka_version:test"
+        testCompile "org.apache.kafka:kafka-streams-test-utils:$kafka_version"
         testCompile 'junit:junit:4.+'
     }
 }

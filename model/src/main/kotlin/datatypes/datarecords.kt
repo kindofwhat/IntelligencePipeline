@@ -42,6 +42,8 @@ data class DataRecord(val name: String="",
                       val meta: Set<Metadata> = mutableSetOf(),
                       val propositions: Set<Proposition<*>> = mutableSetOf())
 
+@Serializable
+data class DataRecordWithChunks(val dataRecord: DataRecord= DataRecord(), val chunks: Set<Chunk> = mutableSetOf())
 
 interface Event<C,P>
 @Serializable data class DataRecordEvent(val command: DataRecordCommand = DataRecordCommand.UPSERT, val record: DataRecord = DataRecord()): Event<BaseCommand, DataRecord>

@@ -4,9 +4,7 @@ import datatypes.DataRecord
 import datatypes.DocumentRepresentation
 import facts.Proposer
 import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.channels.BroadcastChannel
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.consumeEach
+import kotlinx.coroutines.experimental.channels.*
 import kotlinx.coroutines.experimental.launch
 import kotlinx.serialization.json.JSON
 import participants.*
@@ -40,8 +38,10 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
 
     }
 
-    override fun all(): List<datatypes.DataRecord> {
-        return all.values.toList()
+    override fun dataRecords(): ReceiveChannel<datatypes.DataRecord> {
+        return produce {
+            all.values.forEach{async {send(it)}}
+        }
     }
 
     /**

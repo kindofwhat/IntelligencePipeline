@@ -1,27 +1,32 @@
 package integrationtests
 
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.runBlocking
-import kotlinx.coroutines.experimental.withTimeout
+import datatypes.Chunk
+import datatypes.DataRecord
+import datatypes.DataRecordWithChunks
+import kotlinx.coroutines.experimental.*
+import kotlinx.coroutines.experimental.channels.Channel
+import kotlinx.coroutines.experimental.channels.consume
+import kotlinx.coroutines.experimental.channels.consumeEach
 import kotlinx.serialization.json.JSON
 import org.apache.kafka.common.serialization.Serdes
-import org.apache.kafka.streams.kstream.Consumed
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster
-import org.apache.kafka.streams.kstream.Materialized
+import org.apache.kafka.streams.kstream.*
 import org.apache.kafka.streams.state.QueryableStoreTypes
-import org.junit.*
-import participants.file.*
+import org.junit.AfterClass
+import org.junit.BeforeClass
+import org.junit.Ignore
+import org.junit.Test
 import participants.*
+import participants.file.*
 import pipeline.impl.KafkaIntelligencePipeline
 import pipeline.impl.KafkaIntelligencePipeline.Companion.CHUNK_TOPIC
 import pipeline.impl.KafkaIntelligencePipeline.Companion.DATARECORD_CONSOLIDATED_TOPIC
-import pipeline.impl.KafkaIntelligencePipeline.Companion.METADATA_EVENT_TOPIC
-import pipeline.impl.KafkaIntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_TOPIC
 import pipeline.impl.KafkaIntelligencePipeline.Companion.DATARECORD_EVENT_TOPIC
 import pipeline.impl.KafkaIntelligencePipeline.Companion.DOCUMENTREPRESENTATION_EVENT_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline.Companion.DOCUMENTREPRESENTATION_INGESTION_TOPIC
+import pipeline.impl.KafkaIntelligencePipeline.Companion.METADATA_EVENT_TOPIC
 import pipeline.serialize.KotlinSerde
 import java.io.File
 import java.nio.file.Files
@@ -41,7 +46,8 @@ class KafkaIntelligencePipelineTests {
             }
             file.delete()
         }
-        val cluster:EmbeddedKafkaCluster = EmbeddedKafkaCluster(1)
+
+        val cluster: EmbeddedKafkaCluster = EmbeddedKafkaCluster(1)
         val streamsConfig = Properties()
         val baseDir = File(".").absolutePath
 
@@ -51,14 +57,14 @@ class KafkaIntelligencePipelineTests {
 
         class DataRecordSerde() : KotlinSerde<datatypes.DataRecord>(datatypes.DataRecord::class.java)
 
-        fun createPipeline(name:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>): KafkaIntelligencePipeline {
+        fun createPipeline(name: String, ingestors: List<PipelineIngestor>, producers: List<MetadataProducer>): KafkaIntelligencePipeline {
             val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline")
-            ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
-            producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
+            ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
+            producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
 //            pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
-            pipeline.registerSideEffect("filewriter", {key, value ->
-                fileRepresentationStrategy(testDir,value,"json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }
-            } )
+            pipeline.registerSideEffect("filewriter") { key, value ->
+                fileRepresentationStrategy(testDir, value, "json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }
+            }
 
             pipeline.registry.register(FileOriginalContentCapability())
 
@@ -79,7 +85,8 @@ class KafkaIntelligencePipelineTests {
             return pipeline
         }
 
-        @AfterClass @JvmStatic
+        @AfterClass
+        @JvmStatic
         fun shutdown() {
             Runtime.getRuntime().addShutdownHook(object : Thread() {
                 override fun run() {
@@ -87,12 +94,13 @@ class KafkaIntelligencePipelineTests {
                         println("cleaning up this mess...")
                         //pipeline?.stop()
                         deleteDir(File(stateDir))
-                        if(embeddedMode) {
+                        if (embeddedMode) {
                             //dangerous!!!
                             val tempDir = File(System.getProperty("java.io.tmpdir"))
 
                             tempDir.listFiles().filter { file ->
-                                file.name.startsWith("kafka") || file.name.startsWith("junit") || file.name.startsWith("librocksdbjni") }
+                                file.name.startsWith("kafka") || file.name.startsWith("junit") || file.name.startsWith("librocksdbjni")
+                            }
                                     .forEach { file ->
                                         println("deleting " + file.absolutePath)
                                         deleteDir(file)
@@ -103,22 +111,23 @@ class KafkaIntelligencePipelineTests {
                             //cluster.deleteTopicsAndWait(1000, *arrayOf(DOCUMENTREPRESENTATION_TOPIC, DOCUMENTREPRESENTATION_INGESTION_TOPIC, METADATA_TOPIC, DATARECORD_EVENT_TOPIC))
                         }
                         println("done, kthxbye")
-                    }catch (t:Throwable)  {
+                    } catch (t: Throwable) {
                         println("Was not able to delete topics " + t)
                     }
                 }
             })
         }
 
-        @BeforeClass @JvmStatic
+        @BeforeClass
+        @JvmStatic
         fun startup() {
             //embedded instance
-            if(Files.exists(Paths.get(testDir))) {
+            if (Files.exists(Paths.get(testDir))) {
                 deleteDir(File(testDir))
             }
             Files.createDirectories(Paths.get(testDir))
             Files.createDirectories(Paths.get(stateDir))
-            if(embeddedMode) {
+            if (embeddedMode) {
                 /*
                 cluster.createTopic(DOCUMENTREPRESENTATION_INGESTION_TOPIC)
                 cluster.createTopic(DOCUMENTREPRESENTATION_TOPIC)
@@ -126,10 +135,10 @@ class KafkaIntelligencePipelineTests {
                 cluster.createTopic(DATARECORD_EVENT_TOPIC)
                  */
                 cluster.start()
-                cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC,DOCUMENTREPRESENTATION_EVENT_TOPIC,METADATA_EVENT_TOPIC,DATARECORD_EVENT_TOPIC, CHUNK_TOPIC, DATARECORD_CONSOLIDATED_TOPIC)
+                cluster.deleteAndRecreateTopics(DOCUMENTREPRESENTATION_INGESTION_TOPIC, DOCUMENTREPRESENTATION_EVENT_TOPIC, METADATA_EVENT_TOPIC, DATARECORD_EVENT_TOPIC, CHUNK_TOPIC, DATARECORD_CONSOLIDATED_TOPIC)
                 hostUrl = cluster.bootstrapServers()
                 //pipeline = KafkaIntelligencePipeline(cluster.bootstrapServers(), stateDir)
-                println("starting embedded kafka cluster with zookeeper ${cluster.zKConnectString()} and bootstrapServes ${cluster.bootstrapServers()}" )
+                println("starting embedded kafka cluster with zookeeper ${cluster.zKConnectString()} and bootstrapServes ${cluster.bootstrapServers()}")
                 streamsConfig.put("bootstrap.servers", cluster.bootstrapServers())
 
             } else {
@@ -164,8 +173,8 @@ class KafkaIntelligencePipelineTests {
     fun testRogueMetadataProducer() {
         println("baseDir is $baseDir")
 
-        class RogueMetadataProducer() :MetadataProducer {
-            override val name="rogue";
+        class RogueMetadataProducer() : MetadataProducer {
+            override val name = "rogue";
             override fun metadataFor(record: datatypes.DataRecord): datatypes.Metadata {
                 throw RuntimeException("na, won't to!")
             }
@@ -178,7 +187,7 @@ class KafkaIntelligencePipelineTests {
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
         pipeline.registerMetadataProducer(RogueMetadataProducer())
 
-        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer(pipeline.registry).name} }, 3)
+        val view = runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, 3)
         pipeline.stop()
     }
 
@@ -195,7 +204,7 @@ class KafkaIntelligencePipelineTests {
         pipeline.registerMetadataProducer(tikaMetadataProducer)
 
 
-        runPipeline(pipeline,{record: datatypes.DataRecord -> true}, 2000)
+        runPipeline(pipeline, { record: datatypes.DataRecord -> true }, 2000)
         pipeline.stop()
     }
 
@@ -210,9 +219,9 @@ class KafkaIntelligencePipelineTests {
 
         pipeline.registerMetadataProducer(HashMetadataProducer())
 
-        val view = runPipeline(pipeline,  {
-            kv: datatypes.DataRecord ->
-                kv.meta.any { metadata ->  metadata.createdBy == HashMetadataProducer().name}},3)
+        val view = runPipeline(pipeline, { kv: datatypes.DataRecord ->
+            kv.meta.any { metadata -> metadata.createdBy == HashMetadataProducer().name }
+        }, 3)
         pipeline.stop()
     }
 
@@ -229,7 +238,7 @@ class KafkaIntelligencePipelineTests {
         pipeline.registerMetadataProducer(nlpParserProducer)
         pipeline.registerMetadataProducer(tikaMetadataProducer)
 
-        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == nlpParserProducer.name} },3)
+        val view = runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == nlpParserProducer.name } }, 3)
         pipeline.stop()
     }
 
@@ -242,10 +251,100 @@ class KafkaIntelligencePipelineTests {
 
         pipeline.registerChunkMetadataProducer(TikaChunkLanguageDetection())
 
+        val builder = StreamsBuilder()
+        val myStreamConfig = Properties()
+        myStreamConfig.putAll(streamsConfig)
+        myStreamConfig.put("application.id", "stream_" + name)
 
-        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaChunkLanguageDetection().name} },3)
+        val chunkStream =
+                builder.stream<Long, Chunk>(CHUNK_TOPIC,
+                        Consumed.with(Serdes.LongSerde(),
+                                KotlinSerde(Chunk::class.java)))
+        chunkStream.foreach { k, v -> println("chunk --- $k: $v") }
+
+        val dataRecordStream =
+                builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
+                        Consumed.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
+
+        dataRecordStream.join(chunkStream, { dataRecord, chunk -> Pair(dataRecord, chunk) },
+                JoinWindows.of(1000),
+                Joined.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java), KotlinSerde(Chunk::class.java)))
+                .foreach({ key, value -> println("joined  $key/${value.second.parentId}/${value.second.index}") })
+
+
+        val streams = KafkaStreams(builder.build(), myStreamConfig)
+        streams.cleanUp()
+        streams.start()
+
+
+        val view = runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaChunkLanguageDetection().name } }, 3)
+        streams.close()
         pipeline.stop()
     }
+
+
+    @Test
+    @Throws(Exception::class)
+    fun testChannels() {
+        val name = "testChannels"
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList<MetadataProducer>())
+
+        pipeline.registerChunkMetadataProducer(TikaChunkLanguageDetection())
+
+        val builder = StreamsBuilder()
+        val myStreamConfig = Properties()
+        myStreamConfig.putAll(streamsConfig)
+        myStreamConfig.put("application.id", "stream_" + name)
+
+        val chunkStream =
+                builder.stream<Long, Chunk>(CHUNK_TOPIC,
+                        Consumed.with(Serdes.LongSerde(),
+                                KotlinSerde(Chunk::class.java)))
+
+
+        val channel = Channel<DataRecordWithChunks>(1)
+
+        val dataRecordStream =
+                builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
+                        Consumed.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java)))
+
+        val joinedStream = dataRecordStream.join(chunkStream, { dataRecord, chunk -> Pair(dataRecord, chunk) },
+                JoinWindows.of(1000),
+                Joined.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java), KotlinSerde(Chunk::class.java)))
+/*
+        val complete = joinedStream.groupByKey().aggregate({DataRecordWithChunks()},
+                { key,newValue, aggregate ->
+                   DataRecordWithChunks(dataRecord = newValue.first, chunks = aggregate.chunks + newValue.second)
+                    },
+                Materialized.with(Serdes.LongSerde(), KotlinSerde(DataRecordWithChunks::class.java)))
+*/
+        val complete = joinedStream.groupByKey().windowedBy(SessionWindows.with(500000))
+                .aggregate({ DataRecordWithChunks() },
+                        { key, newValue, aggregate ->
+                            DataRecordWithChunks(dataRecord = newValue.first, chunks = aggregate.chunks + newValue.second)
+                        },
+                        { key, aggOne, aggTwo ->
+                            DataRecordWithChunks(dataRecord = aggOne.dataRecord, chunks = aggOne.chunks + aggTwo.chunks)
+                        },
+                        Materialized.with(Serdes.LongSerde(), KotlinSerde(DataRecordWithChunks::class.java)))
+
+        complete.toStream().foreach { key, value -> async { channel.send(value) } }
+
+        val streams = KafkaStreams(builder.build(), myStreamConfig)
+        streams.cleanUp()
+        streams.start()
+
+        async {
+            channel.consumeEach { println("consume ${it.dataRecord.name}") }
+        }
+
+        runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaChunkLanguageDetection().name } }, 3)
+        channel.close()
+        streams.close()
+        pipeline.stop()
+    }
+
 
     @Test
     @Throws(Exception::class)
@@ -257,31 +356,33 @@ class KafkaIntelligencePipelineTests {
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
 
 
-        val view = runPipeline(pipeline,{ kv -> kv.meta.any { metadata ->  metadata.createdBy == TikaMetadataProducer(pipeline.registry).name} },3)
+        val view = runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, 3)
         pipeline.stop()
     }
 
 
-     fun runPipeline(pipeline: KafkaIntelligencePipeline,
-                     predicate: (datatypes.DataRecord) -> Boolean,
-                     expectedResults:Int,
-                     timeout:Long = 60000L): List<datatypes.DataRecord> {
-        var view = emptyList<datatypes.DataRecord>()
+    fun runPipeline(pipeline: KafkaIntelligencePipeline,
+                    predicate: (datatypes.DataRecord) -> Boolean,
+                    expectedResults: Int,
+                    timeout: Long = 60000L): List<datatypes.DataRecord> {
+        val view = mutableListOf<DataRecord>()
         runBlocking {
             val job = launch {
                 pipeline.run()
             }
             job.join()
-            delay(5000)
             withTimeout(timeout) {
-                repeat@while(true) {
-                    delay(1000L)
-                    view = pipeline.all().filter(predicate)
-                    if(view.size >= expectedResults) {
-                        break@repeat
+                val dataRecords = pipeline.dataRecords()
+                var i = 0
+                while(i<expectedResults) {
+                    val record = dataRecords.receive()
+                    if(predicate(record)) {
+                        view.add(record)
+                        i++
                     }
                 }
             }
+            pipeline.stop()
 //            view = createDataRecords(storeName)
         }
         return view
@@ -315,6 +416,6 @@ class KafkaIntelligencePipelineTests {
         val view = store.all().asSequence().toList()
 
         streams.close()
-        return view.map { keyValue ->  keyValue.value}
+        return view.map { keyValue -> keyValue.value }
     }
 }
