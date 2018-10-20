@@ -347,24 +347,36 @@ class KafkaIntelligencePipelineTests {
 
 
     @Test
-    @Throws(Exception::class)
     fun testDirectoryCrawlAndTika() {
         val name = "testDirectoryCrawlAndTika"
         val pipeline = createPipeline(name,
                 listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList<MetadataProducer>())
 
         pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
-
-
-        val view = runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, 3)
+        runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, 3)
         pipeline.stop()
     }
 
+    @Test
+    fun testChannelConsumption() {
+        val name = "testDirectoryCrawlAndTika"
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("$baseDir/pipeline/src/test/resources/testresources")), emptyList<MetadataProducer>())
+
+        pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
+        runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, 3)
+        //the stream should have been consumed
+        runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, 0)
+        //but with a new id, the stream starts from beginning
+        runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, expectedResults = 3, timeout = 10000, id = "2nd" )
+        pipeline.stop()
+    }
 
     fun runPipeline(pipeline: KafkaIntelligencePipeline,
                     predicate: (datatypes.DataRecord) -> Boolean,
                     expectedResults: Int,
-                    timeout: Long = 60000L): List<datatypes.DataRecord> {
+                    timeout: Long = 60000L,
+                    id: String = ""): List<datatypes.DataRecord> {
         val view = mutableListOf<DataRecord>()
         runBlocking {
             val job = launch {
@@ -372,7 +384,7 @@ class KafkaIntelligencePipelineTests {
             }
             job.join()
             withTimeout(timeout) {
-                val dataRecords = pipeline.dataRecords()
+                val dataRecords = pipeline.dataRecords(id)
                 var i = 0
                 while(i<expectedResults) {
                     val record = dataRecords.receive()

@@ -7,7 +7,7 @@ import pipeline.capabilities.DefaultCapabilityRegistry
 
 interface IIntelligencePipeline {
  //   fun all():List<datatypes.DataRecord>
- fun dataRecords():ReceiveChannel<DataRecord>
+ fun dataRecords(id: String):ReceiveChannel<DataRecord>
     fun registerChunkMetadataProducer(producer: participants.ChunkMetadataProducer)
     fun registerChunkProducer(name: kotlin.String, chunkProducer: participants.ChunkProducer)
     fun registerSideEffect(name: kotlin.String, sideEffect: participants.PipelineSideEffect)

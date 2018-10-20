@@ -51,26 +51,13 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
     val ingestionProducer: Producer<Long, ByteArray>
     val streamsConfig = Properties()
     var streams:KafkaStreams? = null
-    lateinit var dataRecordTable:KTable<Long, datatypes.DataRecord>
 
     val subStreams = mutableListOf<KafkaStreams>()
 
     val ingestors = mutableListOf<PipelineIngestor>()
     val ingestionChannel = Channel<datatypes.DocumentRepresentation>(Int.MAX_VALUE)
 
-    /*
-    var cache = CacheBuilder.newBuilder()
-            .maximumSize(1000)
-            .expireAfterWrite(10, TimeUnit.SECONDS)
-            .build<Long,DataRecord>()
-
-    private val cacheSideEffect:PipelineSideEffect =  {
-        key, record -> cache.put(key,record)
-    }
-*/
-
-    override fun dataRecords(): ReceiveChannel<DataRecord> {
-
+    override fun dataRecords(id: String): ReceiveChannel<DataRecord> {
         val builder = StreamsBuilder()
 
         val channel= Channel<DataRecord>()
@@ -80,7 +67,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
 
         val myProp = Properties()
         myProp.putAll(streamsConfig)
-        myProp.put("application.id", applicationId + "_dataRecords")
+        myProp.put("application.id", applicationId + "_dataRecords_" + id)
         val streams = KafkaStreams(topology, myProp )
         this.subStreams.add(streams)
         streams.start()
@@ -99,7 +86,6 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
 
         streamsConfig.put("bootstrap.servers", kafkaBootstrap)
         streamsConfig.put("auto.offset.reset", "earliest")
-        // TODO("correct config for state.dir")
         streamsConfig.put("state.dir", stateDir)
         streamsConfig.put("default.key.serde", Serdes.Long().javaClass)
         streamsConfig.put("default.value.serde", Serdes.ByteArray().javaClass)
@@ -179,7 +165,6 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                         Consumed.with(Serdes.LongSerde(),
                                 KotlinSerde(datatypes.DataRecord::class.java)))
 
-        //all MetadataProducers listen on the datarecord topic and produce metadata to the metadata topic
         datarecordStream.filter { _, value ->  value!=null }.foreach { key, value ->  sideEffect(key, value)}
 
 
@@ -219,13 +204,6 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                 }
                 .mapValues { value ->
                     datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, prod.metadataFor(value))
-/*
-                    val job= async {
-                        MetadataEvent(BaseCommand.UPSERT,prod.metadataFor(value))
-
-                    }
-                    runBlocking { job.await() }
-*/
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.record.values.isNotEmpty()
@@ -366,21 +344,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                         },
                         Materialized.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecord::class.java)))
 
-        consolidatedDataRecordTable
-                //doesn't work: somehow produces null values, and I don't know why...
-                /*
-                .filter { k,v-> v != null}
-                .filterNot { key, value ->
-            cache.getIfPresent(key)?.equals(value)?:false
-                }
-        .mapValues { key, value -> println(">>$key / $value"); value}
-                */
-
-        .toStream().to(DATARECORD_CONSOLIDATED_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecord::class.java)))
-
-        dataRecordTable = builder.table<Long, datatypes.DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
-                Consumed.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecord::class.java)),
-                Materialized.`as`("dataRecords"))
+        consolidatedDataRecordTable.toStream().to(DATARECORD_CONSOLIDATED_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecord::class.java)))
 
 
         val topology = builder.build()

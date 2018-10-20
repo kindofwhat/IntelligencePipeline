@@ -38,10 +38,10 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
 
     }
 
-    override fun dataRecords(): ReceiveChannel<datatypes.DataRecord> {
-        return produce {
-            all.values.forEach{async {send(it)}}
-        }
+    override fun dataRecords(id:String): ReceiveChannel<datatypes.DataRecord> {
+        val channel= Channel<DataRecord>()
+        all.values.forEach{async {channel.send(it)}}
+        return channel
     }
 
     /**
@@ -136,8 +136,8 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
         }
         ingestionChannel.close()
 
-        registerSideEffect("persistence") { k, v ->
-            log("persisting $v")
+        registerSideEffect("putting") { k, v ->
+            log("putting $v")
             //TODO: somehow make sure always the last result is stored
             all.set(k, v)
         }

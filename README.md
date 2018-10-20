@@ -102,25 +102,25 @@ for systems where the second, better producer cannot work efficiently with large
 ## V0.2: 
 
 ### Open
-- [ ] Update to Kafka 2.x, check its testing infrastructure
-- [ ] uberjar or something similar
 - [ ] simple regex based keyword extraction
 - [ ] make it available online somewhere
-- [ ] Multiple IP in parallel
 - [ ] Ingestion is on schedule
 - [ ] Large file strategy: many metadata producers take too long, e.g. stanfordnlp => tokenize this
-- [ ] IP can be rescheduled
 - [ ] Intelligent reprocessing of Metadata
 - [ ] better GUI
 - [ ] coroutines for MetadataProducers and where it makes sense
 
 
 ### Done
+- [x] Update to Kafka 2.x, check its testing infrastructure
+- [x] Multiple IP in parallel
+- [x] IP can be rescheduled
 
 
 ## V0.3: feature complete
 
 ### Open
+- [ ] uberjar or something similar
 - [ ] Possibility for external process to attach via batch
 - [ ] more Ingestors
 - [ ] Ingestors based on Kafka Connect
