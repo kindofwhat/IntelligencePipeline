@@ -165,6 +165,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                         Consumed.with(Serdes.LongSerde(),
                                 KotlinSerde(datatypes.DataRecord::class.java)))
 
+        //TODO: better to use peak())?
         datarecordStream.filter { _, value ->  value!=null }.foreach { key, value ->  sideEffect(key, value)}
 
 

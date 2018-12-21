@@ -3,8 +3,10 @@ package integrationtests
 import datatypes.Chunk
 import datatypes.DataRecord
 import datatypes.DataRecordWithChunks
+import datatypes.DocumentRepresentation
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.Channel
+import kotlinx.coroutines.experimental.channels.SendChannel
 import kotlinx.coroutines.experimental.channels.consume
 import kotlinx.coroutines.experimental.channels.consumeEach
 import kotlinx.serialization.json.JSON
@@ -430,4 +432,15 @@ class KafkaIntelligencePipelineTests {
         streams.close()
         return view.map { keyValue -> keyValue.value }
     }
+}
+
+private class TestIngestor(val content:List<String>) :PipelineIngestor {
+    override suspend fun ingest(channel: SendChannel<DocumentRepresentation>) {
+        content.forEach {
+            channel.send(datatypes.DocumentRepresentation(it, this.name))
+        }
+    }
+
+    override val name = "test"
+
 }

@@ -335,11 +335,3 @@ class DirectoryIngestor(val directory: String) : PipelineIngestor {
         }
     }
 }
-
-class NoOpIngestor() : PipelineIngestor {
-    override val name = "noop"
-
-    suspend override fun ingest(channel: SendChannel<datatypes.DocumentRepresentation>) {
-
-    }
-}
