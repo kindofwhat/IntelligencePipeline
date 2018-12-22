@@ -1,9 +1,11 @@
 package unittests
 
 import datatypes.DataRecord
-import kotlinx.coroutines.experimental.runBlocking
-import kotlinx.coroutines.experimental.withTimeout
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.JSON
+import kotlinx.serialization.stringify
 import org.junit.Ignore
 import participants.*
 import participants.file.*
@@ -11,6 +13,7 @@ import pipeline.IIntelligencePipeline
 import pipeline.impl.MapIntelligencePipeline
 import java.io.File
 
+@ImplicitReflectionSerializer
 class MapIntelligencePipelineTests {
 
     val baseDir = File(".").absolutePath

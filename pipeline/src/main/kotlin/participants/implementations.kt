@@ -14,7 +14,7 @@ import edu.stanford.nlp.trees.TreeCoreAnnotations
 import facts.Proposer
 import facts.Proposition
 import facts.PropositionType
-import kotlinx.coroutines.experimental.channels.SendChannel
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.io.InputStream
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JSON
@@ -31,8 +31,11 @@ import pipeline.capabilities.*
 import java.io.File
 import java.io.OutputStream
 import java.util.*
-import kotlin.coroutines.experimental.buildSequence
+import kotlinx.coroutines.*
 import com.google.cloud.language.v1.LanguageServiceClient
+import kotlinx.serialization.ImplicitReflectionSerializer
+import kotlinx.serialization.parse
+import kotlinx.serialization.stringify
 
 
 class HashMetadataProducer() : MetadataProducer {
@@ -64,7 +67,7 @@ class StanfordNlpSentenceChunkProducer(val lookup: CapabilityLookupStrategy):Chu
         val text = lookup.lookup(simpleTextIn, record, String::class.java)
         //val text:String? = record.meta.firstOrNull { metadata -> metadata.createdBy == TikaMetadataProducer().name }?.values?.get("text")
         if (StringUtils.isNotEmpty(text)) {
-            return buildSequence {
+            return sequence {
                 val document = Annotation(text)
 
                 // run all Annotators on this text
@@ -299,6 +302,7 @@ class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,
     data class ResponseDocuments(val documents:List<ResponseDocument>, val errors: List<String> = arrayListOf())
 
 
+    @ImplicitReflectionSerializer
     override fun metadataFor(record: datatypes.DataRecord): datatypes.Metadata {
         val text:String? =lookup.lookup(simpleTextIn,record,String::class.java)
         if(StringUtils.isNotEmpty( text)) {
@@ -333,13 +337,5 @@ class DirectoryIngestor(val directory: String) : PipelineIngestor {
         File(directory).walkTopDown().forEach {
             channel.send(datatypes.DocumentRepresentation(it.absolutePath, this.name))
         }
-    }
-}
-
-class NoOpIngestor() : PipelineIngestor {
-    override val name = "noop"
-
-    suspend override fun ingest(channel: SendChannel<datatypes.DocumentRepresentation>) {
-
     }
 }

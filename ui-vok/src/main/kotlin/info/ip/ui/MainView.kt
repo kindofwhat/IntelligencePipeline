@@ -1,12 +1,11 @@
 package info.ip.ui
 
-import com.github.vok.karibudsl.flow.*
+import com.github.mvysny.karibudsl.v10.*
 import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.ComponentEvent
 import com.vaadin.flow.component.HasComponents
 import com.vaadin.flow.component.dependency.HtmlImport
 import com.vaadin.flow.component.html.Div
-import com.vaadin.flow.component.html.Label
 import com.vaadin.flow.component.html.ListItem
 import com.vaadin.flow.component.html.UnorderedList
 import com.vaadin.flow.component.notification.Notification
@@ -16,8 +15,6 @@ import com.vaadin.flow.component.page.Push
 import com.vaadin.flow.component.page.Viewport
 import com.vaadin.flow.component.tabs.Tab
 import com.vaadin.flow.component.tabs.Tabs
-import com.vaadin.flow.data.renderer.ComponentRenderer
-import com.vaadin.flow.function.SerializableFunction
 import com.vaadin.flow.router.Route
 import com.vaadin.flow.server.ErrorHandler
 import com.vaadin.flow.theme.Theme
@@ -25,15 +22,17 @@ import com.vaadin.flow.theme.lumo.Lumo
 import createPipeline
 import datatypes.DataRecord
 import datatypes.DocumentRepresentation
-import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.consumeEach
-import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.launch
+import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.JSON
+import kotlinx.serialization.stringify
 import participants.DirectoryIngestor
 import participants.TikaMetadataProducer
 import pipeline.IIntelligencePipeline
-import javax.xml.crypto.Data
 
 
 sealed class PipelineMessage
@@ -48,6 +47,7 @@ class Pipeline<T : Component>(source: T, fromClient: Boolean = false) : Componen
 /**
  * The main view contains a button and a template element.
  */
+@ImplicitReflectionSerializer
 @BodySize(width = "100vw", height = "100vh")
 @HtmlImport("frontend://styles.html")
 @Route("")
@@ -67,7 +67,7 @@ class MainView : VerticalLayout() {
             Notification("Internal error ${event.throwable}", 3000,
                     com.vaadin.flow.component.notification.Notification.Position.MIDDLE).open()
         }
-        launch(vaadin()) {
+        GlobalScope.launch(vaadin()) {
             var myPipeline: IIntelligencePipeline? = null
             actionChannel.consumeEach { msg ->
                 when (msg) {
@@ -113,22 +113,22 @@ class MainView : VerticalLayout() {
 
                     content { align(left, evenly) }
                     val url = textField("Kafka Host URL") {
-                        value = "liu:9092"
+                        value = "localhost:29092"
                     }
                     val state = textField("State Directory") {
-                        value = "D:\\data\\workspace\\IntelligencePipeline\\out"
+                        value = "/tmp"
                     }
                     val scan = textField("Scan Directory") {
-                        value = "D:\\data\\workspace\\IntelligencePipeline\\pipeline\\src\\test\\resources\\testresources"
+                        value = "/tmp"
                     }
                     button("Start Pipeline!").onLeftClick { event ->
-                        async(vaadin()) {
+                        GlobalScope.async(vaadin()) {
                             actionChannel.send(PipelineCreateMessage(url.value, state.value, scan.value))
                             actionChannel.send(PipelineStartMessage())
                         }
                     }
                     button("Stop Pipeline").onLeftClick { event ->
-                        async(vaadin()) {
+                        GlobalScope.async(vaadin()) {
                             actionChannel.send(PipelineStopMessage())
                         }
                     }
@@ -143,7 +143,7 @@ class MainView : VerticalLayout() {
                         val items = mutableSetOf<DataRecord>()
                         addColumn(DataRecord::name).setHeader("Name")
                         addColumn(DataRecord::meta).setHeader("Meta")
-                        async(vaadin()) {
+                        GlobalScope.async(vaadin()) {
                             dataRecordChannel.consumeEach { dataRecord ->
                                 try {
                                     items += dataRecord

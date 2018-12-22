@@ -1,6 +1,6 @@
 package unittests
 
-import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import participants.*
 import participants.file.*

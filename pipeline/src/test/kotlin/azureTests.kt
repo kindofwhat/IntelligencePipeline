@@ -13,8 +13,11 @@
  * java -cp .;gson-2.8.1.jar keyPhrases
  */
 import com.github.kittinunf.fuel.httpPost
+import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JSON
+import kotlinx.serialization.parse
+import kotlinx.serialization.stringify
 
 @Serializable
 data class RequestDocument(val id: String, val language:String, val text: String)
@@ -30,6 +33,7 @@ data class ResponseDocuments(val documents:List<ResponseDocument>, val errors: L
 
 
 
+@ImplicitReflectionSerializer
 object GetKeyPhrases {
 
     internal var host = "https://westus.api.cognitive.microsoft.com"

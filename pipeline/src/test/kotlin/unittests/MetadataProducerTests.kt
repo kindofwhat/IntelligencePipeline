@@ -1,13 +1,15 @@
 package unittests
 
 import datatypes.DocumentRepresentation
-import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.ImplicitReflectionSerializer
 import org.junit.Ignore
 import org.junit.Test
 import participants.*
 import participants.file.*
 import pipeline.capabilities.DefaultCapabilityRegistry
 
+@ImplicitReflectionSerializer
 class MetadataProducerTests {
     val registry= DefaultCapabilityRegistry()
 

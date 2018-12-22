@@ -1,13 +1,18 @@
 import datatypes.DocumentRepresentation
 import commands.StartPipeline
 import io.javalin.Javalin
+import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.JSON
+import kotlinx.serialization.parse
+import kotlinx.serialization.stringify
 import participants.*
 import participants.file.*
 import pipeline.impl.KafkaIntelligencePipeline
 
+@ImplicitReflectionSerializer
 var  pipeline: KafkaIntelligencePipeline?  =null //= KafkaIntelligencePipeline()
 
+@ImplicitReflectionSerializer
 fun main(args: Array<String>) {
 
     val app =   Javalin.create().apply {
@@ -32,10 +37,12 @@ fun main(args: Array<String>) {
 
 }
 
+@ImplicitReflectionSerializer
 fun stopPipeline() {
     pipeline?.stop()
 }
 
+@ImplicitReflectionSerializer
 fun startPipeline(command: StartPipeline, app:Javalin) {
     pipeline = createPipeline(command.bootstrap, command.stateDirectory,
             listOf(DirectoryIngestor(command.scanDirectory)), emptyList(),app)
@@ -43,6 +50,7 @@ fun startPipeline(command: StartPipeline, app:Javalin) {
 }
 
 
+@ImplicitReflectionSerializer
 fun createPipeline(hostUrl:String, stateDir:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>, app:Javalin): KafkaIntelligencePipeline {
     val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline1")
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}

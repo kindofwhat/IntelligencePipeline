@@ -2,11 +2,11 @@ package info.ip.ui
 
 import com.vaadin.flow.component.UI
 import com.vaadin.flow.server.Command
-import kotlinx.coroutines.experimental.CancellationException
-import kotlinx.coroutines.experimental.CoroutineDispatcher
-import kotlinx.coroutines.experimental.CoroutineExceptionHandler
-import kotlinx.coroutines.experimental.Job
-import kotlin.coroutines.experimental.CoroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Job
+import kotlin.coroutines.CoroutineContext
 
 
 fun checkUIThread() {
@@ -41,7 +41,7 @@ private data class VaadinExceptionHandler(val ui: UI?) : CoroutineExceptionHandl
         // ignore CancellationException (they are normal means to terminate a coroutine)
         if (exception is CancellationException) return
         // try cancel job in the context
-        context[Job]?.cancel(exception)
+        context[Job]?.cancel()
         // send the exception to Vaadin
         ui?.access { throw exception }
     }
