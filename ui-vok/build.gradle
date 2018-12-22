@@ -1,6 +1,6 @@
 buildscript {
-    ext.karibudsl_version = '0.4.3'
-    ext.vaadin10_version = '10.0.0.beta10'
+    ext.karibudsl_version = '0.5.2'
+    ext.vaadin10_version = '12.0.3'
 }
 
 
@@ -37,7 +37,7 @@ dependencyManagement {
 dependencies {
     compile project(':pipeline')
     compile('javax:javaee-api:7.0')
-    compile("com.github.vok.karibudsl:karibu-dsl-v10:0.4.2")
+    compile("com.github.mvysny.karibudsl:karibu-dsl-v10:${karibudsl_version}")
 //    providedCompile 'javax.servlet:javax.servlet-api:3.1.0'
 
     // logging
