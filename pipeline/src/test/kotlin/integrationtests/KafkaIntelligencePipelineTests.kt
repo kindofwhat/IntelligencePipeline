@@ -4,12 +4,13 @@ import datatypes.Chunk
 import datatypes.DataRecord
 import datatypes.DataRecordWithChunks
 import datatypes.DocumentRepresentation
-import kotlinx.coroutines.experimental.*
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.SendChannel
-import kotlinx.coroutines.experimental.channels.consume
-import kotlinx.coroutines.experimental.channels.consumeEach
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.JSON
+import kotlinx.serialization.stringify
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.StreamsBuilder
@@ -35,7 +36,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.*
 
-
+@ImplicitReflectionSerializer
 class KafkaIntelligencePipelineTests {
     companion object {
         val embeddedMode = true
@@ -331,13 +332,13 @@ class KafkaIntelligencePipelineTests {
                         },
                         Materialized.with(Serdes.LongSerde(), KotlinSerde(DataRecordWithChunks::class.java)))
 
-        complete.toStream().foreach { key, value -> async { channel.send(value) } }
+        complete.toStream().foreach { key, value -> GlobalScope.async { channel.send(value) } }
 
         val streams = KafkaStreams(builder.build(), myStreamConfig)
         streams.cleanUp()
         streams.start()
 
-        async {
+        GlobalScope.async {
             channel.consumeEach { println("consume ${it.dataRecord.name}") }
         }
 
@@ -381,7 +382,7 @@ class KafkaIntelligencePipelineTests {
                     id: String = ""): List<datatypes.DataRecord> {
         val view = mutableListOf<DataRecord>()
         runBlocking {
-            val job = launch {
+            val job = GlobalScope.launch {
                 pipeline.run()
             }
             job.join()

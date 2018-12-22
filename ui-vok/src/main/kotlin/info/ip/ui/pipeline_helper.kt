@@ -1,3 +1,4 @@
+import kotlinx.serialization.ImplicitReflectionSerializer
 import participants.*
 import participants.file.*
 import pipeline.IIntelligencePipeline
@@ -6,6 +7,7 @@ import pipeline.impl.MapIntelligencePipeline
 import java.io.File
 
 
+@ImplicitReflectionSerializer
 fun createPipeline(hostUrl:String, stateDir:String,
                    ingestors: List<PipelineIngestor> = emptyList(),
                    producers:List<MetadataProducer> = emptyList()): IIntelligencePipeline {

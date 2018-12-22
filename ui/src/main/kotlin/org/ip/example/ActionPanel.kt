@@ -8,7 +8,7 @@ import pl.treksoft.kvision.panel.SimplePanel
 import pl.treksoft.kvision.utils.px
 import com.egorzh.networkinkt.*
 import commands.StartPipeline
-import kotlinx.coroutines.experimental.async
+import kotlin.coroutines.async
 import kotlinx.serialization.json.JSON
 import org.w3c.dom.WebSocket
 

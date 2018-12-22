@@ -1,7 +1,7 @@
 package pipeline
 
 import datatypes.DataRecord
-import kotlinx.coroutines.experimental.channels.ReceiveChannel
+import kotlinx.coroutines.channels.ReceiveChannel
 import pipeline.capabilities.DefaultCapabilityRegistry
 
 

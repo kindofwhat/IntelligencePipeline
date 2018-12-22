@@ -1,6 +1,6 @@
 package participants
 
-import kotlinx.coroutines.experimental.channels.SendChannel
+import kotlinx.coroutines.channels.SendChannel
 import pipeline.capabilities.CapabilityLookupStrategy
 
 /**

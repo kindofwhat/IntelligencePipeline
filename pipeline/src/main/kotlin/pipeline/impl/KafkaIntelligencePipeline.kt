@@ -2,13 +2,14 @@ package pipeline.impl
 
 import datatypes.DataRecord
 import facts.Proposer
-import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.ReceiveChannel
-import kotlinx.coroutines.experimental.channels.consumeEach
-import kotlinx.coroutines.experimental.channels.produce
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.ImplicitReflectionSerializer
 import org.apache.commons.lang.StringUtils
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.Producer
@@ -16,16 +17,12 @@ import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.serialization.ByteArraySerializer
 import org.apache.kafka.common.serialization.LongSerializer
 import org.apache.kafka.common.serialization.Serdes
-import org.apache.kafka.streams.kstream.Consumed
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.StreamsBuilder
-import org.apache.kafka.streams.Topology
-import org.apache.kafka.streams.errors.InvalidStateStoreException
-import org.apache.kafka.streams.kstream.KTable
+import org.apache.kafka.streams.kstream.Consumed
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.kstream.Produced
-import org.apache.kafka.streams.state.QueryableStoreTypes
 import participants.*
 import pipeline.capabilities.Capability
 import pipeline.capabilities.DefaultCapabilityRegistry
@@ -35,7 +32,7 @@ import util.log
 import java.util.*
 
 
-
+@ImplicitReflectionSerializer
 class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicationId:String ="KafkaIntelligencePipeline"): pipeline.IIntelligencePipeline {
 
     companion object {
@@ -62,7 +59,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
 
         val channel= Channel<DataRecord>()
         builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC, Consumed.with(Serdes.LongSerde(),
-                KotlinSerde(datatypes.DataRecord::class.java))).foreach{ key, value ->  async {  channel.send(value)} }
+                KotlinSerde(datatypes.DataRecord::class.java))).foreach{ key, value ->  GlobalScope.async {  channel.send(value)} }
         val topology = builder.build()
 
         val myProp = Properties()
@@ -258,7 +255,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
 
     override fun registerIngestor(ingestor: participants.PipelineIngestor) {
         ingestors.add(ingestor)
-        async {
+        GlobalScope.async {
             log("start ingestor ")
             ingestor.ingest(ingestionChannel)
             log("done ingestor")
@@ -271,7 +268,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
     }
 
     override fun run() {
-        launch {
+        GlobalScope.launch {
             //doesn't work: somehow produces null values, and I don't know why...
 
             //  registerSideEffect("cache", cacheSideEffect)

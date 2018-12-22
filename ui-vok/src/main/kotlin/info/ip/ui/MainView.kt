@@ -25,11 +25,12 @@ import com.vaadin.flow.theme.lumo.Lumo
 import createPipeline
 import datatypes.DataRecord
 import datatypes.DocumentRepresentation
-import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.consumeEach
-import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.JSON
+import kotlinx.serialization.stringify
 import participants.DirectoryIngestor
 import participants.TikaMetadataProducer
 import pipeline.IIntelligencePipeline
@@ -48,6 +49,7 @@ class Pipeline<T : Component>(source: T, fromClient: Boolean = false) : Componen
 /**
  * The main view contains a button and a template element.
  */
+@ImplicitReflectionSerializer
 @BodySize(width = "100vw", height = "100vh")
 @HtmlImport("frontend://styles.html")
 @Route("")
@@ -67,7 +69,7 @@ class MainView : VerticalLayout() {
             Notification("Internal error ${event.throwable}", 3000,
                     com.vaadin.flow.component.notification.Notification.Position.MIDDLE).open()
         }
-        launch(vaadin()) {
+        GlobalScope.launch(vaadin()) {
             var myPipeline: IIntelligencePipeline? = null
             actionChannel.consumeEach { msg ->
                 when (msg) {
@@ -122,13 +124,13 @@ class MainView : VerticalLayout() {
                         value = "D:\\data\\workspace\\IntelligencePipeline\\pipeline\\src\\test\\resources\\testresources"
                     }
                     button("Start Pipeline!").onLeftClick { event ->
-                        async(vaadin()) {
+                        GlobalScope.async(vaadin()) {
                             actionChannel.send(PipelineCreateMessage(url.value, state.value, scan.value))
                             actionChannel.send(PipelineStartMessage())
                         }
                     }
                     button("Stop Pipeline").onLeftClick { event ->
-                        async(vaadin()) {
+                        GlobalScope.async(vaadin()) {
                             actionChannel.send(PipelineStopMessage())
                         }
                     }
@@ -143,7 +145,7 @@ class MainView : VerticalLayout() {
                         val items = mutableSetOf<DataRecord>()
                         addColumn(DataRecord::name).setHeader("Name")
                         addColumn(DataRecord::meta).setHeader("Meta")
-                        async(vaadin()) {
+                        GlobalScope.async(vaadin()) {
                             dataRecordChannel.consumeEach { dataRecord ->
                                 try {
                                     items += dataRecord

@@ -3,14 +3,16 @@ package pipeline.impl
 import datatypes.DataRecord
 import datatypes.DocumentRepresentation
 import facts.Proposer
-import kotlinx.coroutines.experimental.async
-import kotlinx.coroutines.experimental.channels.*
-import kotlinx.coroutines.experimental.launch
-import kotlinx.serialization.json.JSON
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.BroadcastChannel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.launch
 import participants.*
 import pipeline.capabilities.DefaultCapabilityRegistry
 import util.log
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 
@@ -40,7 +42,7 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
 
     override fun dataRecords(id:String): ReceiveChannel<datatypes.DataRecord> {
         val channel= Channel<DataRecord>()
-        all.values.forEach{async {channel.send(it)}}
+        all.values.forEach{GlobalScope.async {channel.send(it)}}
         return channel
     }
 
@@ -61,7 +63,7 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
      * creates an own stream for this producer and starts it
      */
     override fun registerSideEffect(name: String, sideEffect: PipelineSideEffect) {
-        async {
+        GlobalScope.async {
             dataRecordMessageChannel.consumeEach { dataRecordMessage ->
                 sideEffect.invoke(dataRecordMessage.id, dataRecordMessage.dataRecord)
             }
@@ -86,7 +88,7 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
      */
     private fun handleDataRecordMessage(actionDecider: (DataRecord)->Boolean,
                                          newDataRecordCreator: (DataRecord) -> DataRecord) {
-        async {
+        GlobalScope.async {
             dataRecordMessageChannel.consumeEach { dataRecordMessage ->
                 val dataRecord = dataRecordMessage.dataRecord
                 if (actionDecider.invoke(dataRecord)) {
@@ -113,7 +115,7 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
 
     override fun registerIngestor(ingestor: participants.PipelineIngestor) {
         ingestors.add(ingestor)
-        async {
+        GlobalScope.async {
             log("start ingestor ")
             ingestor.ingest(ingestionChannel)
             log("done ingestor")
@@ -128,7 +130,7 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
 
     override fun run() {
 
-        launch {
+        GlobalScope.launch {
             ingestionChannel.consumeEach { doc ->
                 val dataRecord = DataRecord(name = doc.path, representation = doc)
                 dataRecordMessageChannel.send(DataRecordMessage.Create(doc.path.hashCode().toLong(), dataRecord))
