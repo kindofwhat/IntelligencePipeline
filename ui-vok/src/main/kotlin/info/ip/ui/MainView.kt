@@ -4,6 +4,7 @@ import com.github.mvysny.karibudsl.v10.*
 import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.ComponentEvent
 import com.vaadin.flow.component.HasComponents
+import com.vaadin.flow.component.UI
 import com.vaadin.flow.component.dependency.HtmlImport
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.ListItem
@@ -22,17 +23,17 @@ import com.vaadin.flow.theme.lumo.Lumo
 import createPipeline
 import datatypes.DataRecord
 import datatypes.DocumentRepresentation
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.async
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.sendBlocking
 import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.JSON
 import kotlinx.serialization.stringify
 import participants.DirectoryIngestor
 import participants.TikaMetadataProducer
 import pipeline.IIntelligencePipeline
+import kotlin.coroutines.CoroutineContext
 
 
 sealed class PipelineMessage
@@ -47,6 +48,7 @@ class Pipeline<T : Component>(source: T, fromClient: Boolean = false) : Componen
 /**
  * The main view contains a button and a template element.
  */
+@UseExperimental(ObsoleteCoroutinesApi::class)
 @ImplicitReflectionSerializer
 @BodySize(width = "100vw", height = "100vh")
 @HtmlImport("frontend://styles.html")
@@ -54,12 +56,22 @@ class Pipeline<T : Component>(source: T, fromClient: Boolean = false) : Componen
 @Viewport("width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes")
 @Theme(Lumo::class)
 @Push
-class MainView : VerticalLayout() {
+class MainView : VerticalLayout(), CoroutineScope {
+    /**
+     * I must use the [SupervisorJob] here; regular [Job] would cancel itself if any of the child coroutines failed, and that would
+     * prevent launching more coroutines.
+     */
+    private val uiCoroutineScope = SupervisorJob()
+    private val uiCoroutineContext = vaadin( UI.getCurrent())
+    override val coroutineContext: CoroutineContext
+        get() = uiCoroutineContext + uiCoroutineScope
+
 
     val tabPages = mutableListOf<Component>()
     var dataRecordChannel = Channel<DataRecord>()
 
     val actionChannel = Channel<PipelineMessage>()
+
 
     init {
 
@@ -67,19 +79,17 @@ class MainView : VerticalLayout() {
             Notification("Internal error ${event.throwable}", 3000,
                     com.vaadin.flow.component.notification.Notification.Position.MIDDLE).open()
         }
-        GlobalScope.launch(vaadin()) {
+        launch(this.uiCoroutineScope) {
             var myPipeline: IIntelligencePipeline? = null
             actionChannel.consumeEach { msg ->
                 when (msg) {
                     is PipelineCreateMessage -> {
-                        val job = async(vaadin()) {
-                            var pipeline: IIntelligencePipeline
+                        val job = async {
+                            val pipeline: IIntelligencePipeline
                             pipeline = createPipeline(msg.url, msg.state,
                                     listOf(DirectoryIngestor(msg.scanDir)))
                             pipeline.registerSideEffect("ui") { key, value ->
-                                async {
-                                    dataRecordChannel.send(value)
-                                }
+                                    dataRecordChannel.sendBlocking(value)
                             }
                             pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
                             pipeline
@@ -122,13 +132,13 @@ class MainView : VerticalLayout() {
                         value = "/tmp"
                     }
                     button("Start Pipeline!").onLeftClick { event ->
-                        GlobalScope.async(vaadin()) {
+                        async {
                             actionChannel.send(PipelineCreateMessage(url.value, state.value, scan.value))
                             actionChannel.send(PipelineStartMessage())
                         }
                     }
                     button("Stop Pipeline").onLeftClick { event ->
-                        GlobalScope.async(vaadin()) {
+                        async {
                             actionChannel.send(PipelineStopMessage())
                         }
                     }
@@ -143,9 +153,10 @@ class MainView : VerticalLayout() {
                         val items = mutableSetOf<DataRecord>()
                         addColumn(DataRecord::name).setHeader("Name")
                         addColumn(DataRecord::meta).setHeader("Meta")
-                        GlobalScope.async(vaadin()) {
+                        async {
                             dataRecordChannel.consumeEach { dataRecord ->
                                 try {
+                                    println("datarecord: $dataRecord")
                                     items += dataRecord
                                     setItems(items)
                                 } catch (e: Exception) {

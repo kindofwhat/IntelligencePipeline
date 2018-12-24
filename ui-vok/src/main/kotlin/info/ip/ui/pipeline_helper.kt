@@ -15,7 +15,7 @@ fun createPipeline(hostUrl:String, stateDir:String,
     //val pipeline = MapIntelligencePipeline()
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
-    pipeline.registerSideEffect("printer", { key, value -> println("$key: $value") })
+    pipeline.registerSideEffect("printer", { key, value -> println(">>>$key: $value<<<") })
 
     pipeline.registry.register(FileOriginalContentCapability())
 
