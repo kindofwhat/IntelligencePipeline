@@ -26,11 +26,6 @@ stack as a docker swarm with the command
 ```bash
 docker stack deploy -c docker-compose.yml my-confluent
 ```
-Before doing that you have to change the lines
-```
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://cixin:9092
-      KAFKA_ADVERTISED_HOST_NAME: cixin
-```
 
 where you replace the value cixin with the name of your current host
 
