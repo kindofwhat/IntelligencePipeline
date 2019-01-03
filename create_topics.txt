@@ -1,7 +1,0 @@
-docker exec confluent_stack_broker.1.2wmx6nzg92ovah0logsspcook  kafka-topics --create --topic document-representation-ingestion --partitions 1 --replication-factor 1 --if-not-exists --zookeeper zookeeper:2181
-docker exec confluent_stack_broker.1.2wmx6nzg92ovah0logsspcook  kafka-topics --create --topic document-representation-event --partitions 1 --replication-factor 1 --if-not-exists --zookeeper zookeeper:2181
-docker exec confluent_stack_broker.1.2wmx6nzg92ovah0logsspcook  kafka-topics --create --topic metadata-event --partitions 1 --replication-factor 1 --if-not-exists --zookeeper zookeeper:2181
-docker exec confluent_stack_broker.1.2wmx6nzg92ovah0logsspcook  kafka-topics --create --topic datarecord-event --partitions 1 --replication-factor 1 --if-not-exists --zookeeper zookeeper:2181
-docker exec confluent_stack_broker.1.2wmx6nzg92ovah0logsspcook  kafka-topics --create --topic datarecord-consolidated --partitions 1 --replication-factor 1 --if-not-exists --zookeeper zookeeper:2181
-docker exec confluent_stack_broker.1.2wmx6nzg92ovah0logsspcook  kafka-topics --create --topic chunk --partitions 1 --replication-factor 1 --if-not-exists --zookeeper zookeeper:2181
-
