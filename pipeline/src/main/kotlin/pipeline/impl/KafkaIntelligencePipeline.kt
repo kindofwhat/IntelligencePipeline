@@ -23,6 +23,9 @@ import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.kstream.Consumed
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.kstream.Produced
+import org.apache.kafka.streams.kstream.ValueTransformerWithKey
+import org.apache.kafka.streams.kstream.ValueTransformerWithKeySupplier
+import org.apache.kafka.streams.processor.ProcessorContext
 import participants.*
 import pipeline.capabilities.Capability
 import pipeline.capabilities.DefaultCapabilityRegistry
@@ -33,7 +36,7 @@ import java.util.*
 
 
 @ImplicitReflectionSerializer
-class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val applicationId:String ="KafkaIntelligencePipeline"): pipeline.IIntelligencePipeline {
+class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val applicationId: String = "KafkaIntelligencePipeline") : pipeline.IIntelligencePipeline {
 
     companion object {
         val DOCUMENTREPRESENTATION_INGESTION_TOPIC = "document-representation-ingestion"
@@ -44,28 +47,29 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         val CHUNK_TOPIC = "chunk"
     }
 
-    override val registry=DefaultCapabilityRegistry()
-    val ingestionProducer: Producer<Long, ByteArray>
-    val streamsConfig = Properties()
-    var streams:KafkaStreams? = null
+    override val registry = DefaultCapabilityRegistry()
+    private val ingestionProducer: Producer<Long, ByteArray>
+    private val streamsConfig = Properties()
+    private var streams: KafkaStreams? = null
+    private var startTime = Date().time
 
-    val subStreams = mutableListOf<KafkaStreams>()
+    private val subStreams = mutableListOf<KafkaStreams>()
 
-    val ingestors = mutableListOf<PipelineIngestor>()
-    val ingestionChannel = Channel<datatypes.DocumentRepresentation>(Int.MAX_VALUE)
+    private val ingestors = mutableListOf<PipelineIngestor>()
+    private val ingestionChannel = Channel<datatypes.DocumentRepresentation>(Int.MAX_VALUE)
 
     override fun dataRecords(id: String): ReceiveChannel<DataRecord> {
         val builder = StreamsBuilder()
 
-        val channel= Channel<DataRecord>()
+        val channel = Channel<DataRecord>()
         builder.stream<Long, DataRecord>(DATARECORD_CONSOLIDATED_TOPIC, Consumed.with(Serdes.LongSerde(),
-                KotlinSerde(datatypes.DataRecord::class.java))).foreach{ key, value ->  GlobalScope.async {  channel.send(value)} }
+                KotlinSerde(datatypes.DataRecord::class.java))).foreach { key, value -> GlobalScope.launch { channel.send(value) } }
         val topology = builder.build()
 
         val myProp = Properties()
         myProp.putAll(streamsConfig)
         myProp.put("application.id", applicationId + "_dataRecords_" + id)
-        val streams = KafkaStreams(topology, myProp )
+        val streams = KafkaStreams(topology, myProp)
         this.subStreams.add(streams)
         streams.start()
         return channel
@@ -104,7 +108,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                 builder.stream<Long, datatypes.Chunk>(CHUNK_TOPIC,
                         Consumed.with(Serdes.LongSerde(),
                                 KotlinSerde(datatypes.Chunk::class.java)))
-                        .mapValues {  value ->
+                        .mapValues { value ->
                             datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT,
                                     producer.metadataFor(value))
                         }
@@ -114,29 +118,31 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         val myProp = Properties()
         myProp.putAll(streamsConfig)
         myProp.put("application.id", applicationId + "_chunk_metadata_" + producer.name)
-        val streams = KafkaStreams(topology, myProp )
+        val streams = KafkaStreams(topology, myProp)
         streams.start()
 
         subStreams.add(streams)
     }
 
-     /**
+    /**
      * creates an own stream for this producer and starts it
      */
-    override fun registerChunkProducer(name:String,chunkProducer: ChunkProducer) {
+    override fun registerChunkProducer(name: String, chunkProducer: ChunkProducer) {
         val builder = StreamsBuilder()
 
         //the generic datarecord stream
         val datarecordStream =
                 builder.stream<Long, datatypes.DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
                         Consumed.with(Serdes.LongSerde(),
-                               KotlinSerde(datatypes.DataRecord::class.java)))
+                                KotlinSerde(datatypes.DataRecord::class.java)))
 
         //act on the default representation
         datarecordStream
-                .filter { _, value ->  value != null}
-                .flatMap { key,value: datatypes.DataRecord -> runBlocking { chunkProducer.chunks(value,key) }
-                        .mapNotNull { valueRes -> KeyValue<Long, datatypes.Chunk>(key,valueRes)  } .asIterable() }
+                .filter { _, value -> value != null }
+                .flatMap { key, value: datatypes.DataRecord ->
+                    runBlocking { chunkProducer.chunks(value, key) }
+                            .mapNotNull { valueRes -> KeyValue<Long, datatypes.Chunk>(key, valueRes) }.asIterable()
+                }
                 .mapValues { kv -> kv }
                 .to(CHUNK_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.Chunk::class.java)))
 
@@ -145,15 +151,16 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         val myProp = Properties()
         myProp.putAll(streamsConfig)
         myProp.put("application.id", applicationId + "_chunk_" + name)
-        val streams = KafkaStreams(topology, myProp )
+        val streams = KafkaStreams(topology, myProp)
         streams.start()
 
         subStreams.add(streams)
     }
+
     /**
      * creates an own stream for this producer and starts it
      */
-    override fun registerSideEffect(name:String, sideEffect: PipelineSideEffect) {
+    override fun registerSideEffect(name: String, sideEffect: PipelineSideEffect) {
         val builder = StreamsBuilder()
 
         //the generic datarecord stream
@@ -163,7 +170,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                                 KotlinSerde(datatypes.DataRecord::class.java)))
 
         //TODO: better to use peak())?
-        datarecordStream.filter { _, value ->  value!=null }.foreach { key, value ->  sideEffect(key, value)}
+        datarecordStream.filter { _, value -> value != null }.foreach { key, value -> sideEffect(key, value) }
 
 
         val topology = builder.build()
@@ -171,7 +178,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         val myProp = Properties()
         myProp.putAll(streamsConfig)
         myProp.put("application.id", applicationId + "_sideeffect_" + name)
-        val streams = KafkaStreams(topology, myProp )
+        val streams = KafkaStreams(topology, myProp)
         streams.start()
 
         subStreams.add(streams)
@@ -180,6 +187,28 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
     override fun <I, U> registerProposer(prod: Proposer<I, U>) {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
+
+    private class TimestampValueTransformer<K, V> : ValueTransformerWithKey<K, V, Pair<Long?, V>> {
+        private var context: ProcessorContext? = null
+
+        override fun init(context: ProcessorContext?) {
+            this.context = context
+        }
+
+        override fun transform(readOnlyKey: K, value: V): Pair<Long?, V> {
+            return Pair(context?.timestamp(), value)
+        }
+
+        override fun close() {
+        }
+    }
+
+    private class TimestampValueTransformerSupplier<K, V> : ValueTransformerWithKeySupplier<K, V, Pair<Long?, V>> {
+        override fun get(): ValueTransformerWithKey<K, V, Pair<Long?, V>> {
+            return TimestampValueTransformer()
+        }
+    }
+
     /**
      * creates an own stream for this producer and starts it
      */
@@ -189,19 +218,25 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         //the generic datarecord stream
         val datarecordStream =
                 builder.stream<Long, datatypes.DataRecord>(DATARECORD_CONSOLIDATED_TOPIC,
-                Consumed.with(Serdes.LongSerde(),
-                        KotlinSerde(datatypes.DataRecord::class.java)))
+                        Consumed.with(Serdes.LongSerde(),
+                                KotlinSerde(datatypes.DataRecord::class.java)))
 
         //all MetadataProducers listen on the datarecord topic and produce metadata to the metadata topic
         datarecordStream
+                .transformValues(TimestampValueTransformerSupplier<Long, DataRecord>())
                 //TODO: add some logic here to retry after a while
                 .filter { key, value ->
-                    value != null &&
-                    !value.meta.any { metadata ->
-                    metadata.createdBy == prod.name }
+
+                    (value.first ?: 0 < this.startTime ||
+                            !value.second.meta.any { metadata ->
+                                metadata.createdBy == prod.name
+                            })
                 }
                 .mapValues { value ->
-                    datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, prod.metadataFor(value))
+
+                    println("startTime: $startTime/messageTime: ${value.first}")
+
+                    datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, prod.metadataFor(value.second))
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.record.values.isNotEmpty()
@@ -213,12 +248,12 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         val myProp = Properties()
         myProp.putAll(streamsConfig)
         myProp.put("application.id", applicationId + "_metadata_" + prod.name)
-        val streams = KafkaStreams(topology, myProp )
+        val streams = KafkaStreams(topology, myProp)
         streams.start()
 
         subStreams.add(streams)
 
-        if(prod is Capability<*>) {
+        if (prod is Capability<*>) {
             registry.register(prod as Capability<*>)
         }
     }
@@ -247,7 +282,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
         val myProp = Properties()
         myProp.putAll(streamsConfig)
         myProp.put("application.id", applicationId + "_document_representation_" + prod.name)
-        val streams = KafkaStreams(topology, myProp )
+        val streams = KafkaStreams(topology, myProp)
         streams.start()
 
         subStreams.add(streams)
@@ -263,7 +298,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
     }
 
     override fun stop() {
-        subStreams.forEach { it.close()}
+        subStreams.forEach { it.close() }
         streams?.close()
     }
 
@@ -272,7 +307,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
             //doesn't work: somehow produces null values, and I don't know why...
 
             //  registerSideEffect("cache", cacheSideEffect)
-
+            startTime = Date().time
             streams = createMainStream()
             streams?.start()
             ingestionChannel.consumeEach { doc ->
@@ -281,9 +316,10 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
             }
             ingestionChannel.close()
 
-            log(    "stopping")
+            log("stopping")
         }
     }
+
     private fun createMainStream(): KafkaStreams {
         val builder = StreamsBuilder()
         val ingestionStream = builder.stream<Long, datatypes.DocumentRepresentation>(DOCUMENTREPRESENTATION_INGESTION_TOPIC,
@@ -300,9 +336,9 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                         KotlinSerde(datatypes.DocumentRepresentationEvent::class.java)))
 
         documentRepresentationEventStream.mapValues { value ->
-            if(value.command== datatypes.BaseCommand.UPSERT) {
+            if (value.command == datatypes.BaseCommand.UPSERT) {
                 datatypes.DataRecordEvent(datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION, datatypes.DataRecord(additionalRepresentations = setOf(value.record)))
-            } else{
+            } else {
                 throw Exception("Don't know how to handle $value")
             }
         }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecordEvent::class.java)))
@@ -313,9 +349,9 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                         KotlinSerde(datatypes.MetadataEvent::class.java)))
 
         metadataEventStream.mapValues { value ->
-            if(value.command== datatypes.BaseCommand.UPSERT) {
+            if (value.command == datatypes.BaseCommand.UPSERT) {
                 datatypes.DataRecordEvent(datatypes.DataRecordCommand.UPSERT_METADATA, datatypes.DataRecord(meta = setOf(value.record)))
-            } else{
+            } else {
                 throw Exception("Don't know how to handle $value")
             }
         }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecordEvent::class.java)))
@@ -329,11 +365,11 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir:String, val app
                 .aggregate(
                         { datatypes.DataRecord() },
                         { _, dataRecordEvent, dataRecord ->
-                            if(dataRecordEvent.command == datatypes.DataRecordCommand.CREATE) {
+                            if (dataRecordEvent.command == datatypes.DataRecordCommand.CREATE) {
                                 dataRecord.copy(representation = dataRecordEvent.record.representation, name = dataRecordEvent.record.name)
-                            } else if(dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_METADATA) {
+                            } else if (dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_METADATA) {
                                 dataRecord.copy(meta = dataRecord.meta + dataRecordEvent.record.meta)
-                            } else if(dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION) {
+                            } else if (dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION) {
                                 dataRecord.copy(additionalRepresentations = dataRecord.additionalRepresentations + dataRecordEvent.record.additionalRepresentations)
                             } else {
                                 throw Exception("Don't know how to handle $dataRecordEvent")
