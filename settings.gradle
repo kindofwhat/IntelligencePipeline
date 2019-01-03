@@ -1,2 +1,2 @@
 rootProject.name = 'IntelligencePipeline'
-include 'model', 'service', 'pipeline', 'ui-vok'
+include 'model', 'service', 'pipeline', 'ui-kweb'
