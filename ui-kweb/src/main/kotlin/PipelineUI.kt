@@ -17,6 +17,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.ImplicitReflectionSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.stringify
 import mu.KotlinLogging
 import participants.DirectoryIngestor
 import pipeline.IIntelligencePipeline
@@ -25,11 +27,11 @@ import kotlin.coroutines.CoroutineContext
 
 @ObsoleteCoroutinesApi
 @ImplicitReflectionSerializer
-object PipelineUI: CoroutineScope  {
+object PipelineUI : CoroutineScope {
     lateinit var job: Job
 
     override val coroutineContext: CoroutineContext
-        get() = job
+        get() = job + Dispatchers.Default
 
 
     private val logger = KotlinLogging.logger {}
@@ -39,33 +41,32 @@ object PipelineUI: CoroutineScope  {
     var pipeline: IIntelligencePipeline? = null
     fun main(args: Array<String>) {
         job = Job()
-
+        logger.debug("Starting GUI")
         Kweb(port = 9090, refreshPageOnHotswap = true, debug = true, plugins = listOf(semanticUIPlugin, foundation)) {
+
             doc.body.new {
                 val creator = this
                 div(semantic.ui.two.column.left.grid).new {
-                    runBlocking {
-                        pipelineActions(creator)
-                    }
-
+                    pipelineActions(creator)
                 }
             }
         }
     }
 
-    private suspend fun pipelineResults(elementCreator: ElementCreator<*>): Unit {
+    private fun pipelineResults(elementCreator: ElementCreator<*>): Unit {
         dataRecords.value.clear()
         launch {
-            for(datarecord in pipeline?.dataRecords("ui")!!) {
+            for (datarecord in pipeline?.dataRecords("ui${System.currentTimeMillis()}")!!) {
                 elementCreator.foundation.row().new {
-                    div().text(datarecord.name)
+                    column().text(datarecord.name)
+                    div(mapOf("style" to "white-space:pre")).text(Json.indented.stringify(datarecord))
                 }
                 dataRecords.value.add(datarecord)
             }
         }
     }
 
-    private suspend fun pipelineActions(creator: ElementCreator<*>): Element {
+    private fun pipelineActions(creator: ElementCreator<*>): Element {
 
         val container = creator.div(semantic.column).text("Pipeline")
 
@@ -82,13 +83,18 @@ object PipelineUI: CoroutineScope  {
                                     ?: "", stateDir?.getValue()?.await()
                                     ?: "", listOf(DirectoryIngestor(documentDir?.getValue()?.await() ?: "")))
                             pipeline?.run()
-                            pipelineResults(creator)
+
                         }
                     }
                 }
                 button(semantic.ui.button).text("Stop").apply {
                     on.click {
                         pipeline?.stop()
+                    }
+                }
+                button(semantic.ui.button).text("Query").apply {
+                    on.click {
+                        pipelineResults(creator)
                     }
                 }
             }

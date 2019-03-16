@@ -10,7 +10,7 @@ import java.util.*
 fun createPipeline(hostUrl:String, stateDir:String,
                    ingestors: List<PipelineIngestor> = emptyList(),
                    producers:List<MetadataProducer> = emptyList()): IIntelligencePipeline {
-    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "uiPipeline")
+    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "uiPipeline${System.currentTimeMillis()}")
     //val pipelineActions = MapIntelligencePipeline()
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
