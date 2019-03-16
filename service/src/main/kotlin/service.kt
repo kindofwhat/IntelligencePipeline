@@ -1,6 +1,11 @@
 import datatypes.DocumentRepresentation
 import commands.StartPipeline
 import io.javalin.Javalin
+import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.JSON
 import kotlinx.serialization.parse
@@ -10,12 +15,12 @@ import participants.file.*
 import pipeline.impl.KafkaIntelligencePipeline
 
 @ImplicitReflectionSerializer
-var  pipeline: KafkaIntelligencePipeline?  =null //= KafkaIntelligencePipeline()
+var pipeline: KafkaIntelligencePipeline? = null //= KafkaIntelligencePipeline()
 
 @ImplicitReflectionSerializer
 fun main(args: Array<String>) {
 
-    val app =   Javalin.create().apply {
+    val app = Javalin.create().apply {
         port(7000)
         exception(Exception::class.java) { e, ctx -> e.printStackTrace() }
         error(404) { ctx -> ctx.json("not found") }
@@ -24,14 +29,15 @@ fun main(args: Array<String>) {
 
     with(app) {
 
-        get("/") { ctx -> ctx.result("Hello World7") }
+        get("/") { ctx -> ctx.result("Hello World!!") }
         get("/test") { ctx -> ctx.result(JSON.stringify(DocumentRepresentation("path", "test"))) }
         post("/startPipeline") { ctx ->
-            startPipeline( JSON.parse(ctx.body()?:"") as StartPipeline, app)
+            startPipeline(JSON.parse(ctx.body() ?: "") as StartPipeline, app)
         }
         post("/stopPipeline") { ctx ->
             stopPipeline()
         }
+        createWesocketClient(app)
     }
 
 
@@ -42,37 +48,43 @@ fun stopPipeline() {
     pipeline?.stop()
 }
 
+@ObsoleteCoroutinesApi
 @ImplicitReflectionSerializer
-fun startPipeline(command: StartPipeline, app:Javalin) {
-    pipeline = createPipeline(command.bootstrap, command.stateDirectory,
-            listOf(DirectoryIngestor(command.scanDirectory)), emptyList(),app)
+fun startPipeline(command: StartPipeline, app: Javalin) {
+    pipeline = createPipeline("testPipeline", command.bootstrap, command.stateDirectory,
+            listOf(DirectoryIngestor(command.scanDirectory)), emptyList(), app)
     pipeline?.run()
+
+}
+
+@ImplicitReflectionSerializer
+fun createWesocketClient(app:Javalin): Javalin? {
+    return app.ws("/websocket/datarecord") { ws ->
+        ws.onConnect { session ->
+            println("Connected to datarecord websocket")
+            runBlocking {
+                coroutineScope {
+                    launch {
+                        pipeline?.dataRecords("testPipeline_read${System.currentTimeMillis()}")?.consumeEach { dataRecord ->
+                            session.remote.sendString(JSON.stringify(dataRecord))
+                        }
+                    }
+
+                }
+            }
+        }
+        ws.onClose { session, statusCode, reason -> println("Closed") }
+        ws.onError { session, throwable -> println("Errored $throwable") }
+        ws.onMessage { session, msg -> }
+    }
 }
 
 
 @ImplicitReflectionSerializer
-fun createPipeline(hostUrl:String, stateDir:String, ingestors: List<PipelineIngestor>, producers:List<MetadataProducer>, app:Javalin): KafkaIntelligencePipeline {
-    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline1")
-    ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor)}
-    producers.forEach { producer -> pipeline.registerMetadataProducer(producer)}
-//    pipeline.registerSideEffect("printer", {key, value -> println("$key: $value")  } )
-
-    pipeline.registerSideEffect("websocket-datarecord", { key, value ->
-        val ws = app.ws("/websocket/datarecord") { ws ->
-            ws.onConnect { session ->
-                println("Connected to datarecord websocket")
-                session.remote.sendString( JSON.stringify(value))
-            }
-            ws.onClose { session, statusCode, reason -> println("Closed") }
-            ws.onError { session, throwable -> println("Errored $throwable") }
-            ws.onMessage { session, msg -> session.remote.sendString( JSON.stringify(value))}
-        }
-    })
-/*
-    pipeline.registerSideEffect("filewriter", {key, value ->
-        fileRepresentationStrategy("out/test",value,"json", true)?.bufferedWriter().use { out -> out?.write(JSON(indented = true).stringify(value)) }
-    } )
-*/
+fun createPipeline(pipelineName: String, hostUrl: String, stateDir: String, ingestors: List<PipelineIngestor>, producers: List<MetadataProducer>, app: Javalin): KafkaIntelligencePipeline {
+    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, pipelineName)
+    ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
+    producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
     pipeline.registry.register(FileOriginalContentCapability())
 
     pipeline.registry.register(FileTxtOutputProvider("out/test"))
