@@ -34,8 +34,9 @@ dependencyManagement {
 }
 
 
+
 dependencies {
-    compile project(':pipeline')
+    compile project(':pipeline-kafka')
     compile('javax:javaee-api:7.0')
     compile("com.github.mvysny.karibudsl:karibu-dsl-v10:${karibudsl_version}")
 //    providedCompile 'javax.servlet:javax.servlet-api:3.1.0'

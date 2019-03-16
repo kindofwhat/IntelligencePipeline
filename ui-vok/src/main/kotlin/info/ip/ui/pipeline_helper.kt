@@ -3,8 +3,6 @@ import participants.*
 import participants.file.*
 import pipeline.IIntelligencePipeline
 import pipeline.impl.KafkaIntelligencePipeline
-import pipeline.impl.MapIntelligencePipeline
-import java.io.File
 
 
 @ImplicitReflectionSerializer

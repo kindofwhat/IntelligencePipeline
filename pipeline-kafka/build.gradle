@@ -1,0 +1,17 @@
+plugins {
+    id "com.google.cloud.tools.jib" version "0.9.9"
+}
+
+dependencies {
+    expectedBy  project(':model')
+    compile project(':pipeline-spi')
+}
+
+jib {
+    container {
+        mainClass = 'StartPipelineKt'
+    }
+    to {
+        image = 'pipeline:latest'
+    }
+}
