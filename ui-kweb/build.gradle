@@ -5,6 +5,6 @@ repositories {
 
 dependencies {
     compile project(':pipeline')
-    compile 'com.github.kwebio:kweb:0.3.0'
-    compile 'org.slf4j:slf4j-simple:1.6.1' // <-- or your favorite SLF4J logger binding
+    compile 'com.github.kwebio:core:0.3.14'
+    compile 'org.slf4j:slf4j-simple:1.7.25' // <-- or your favorite SLF4J logger binding
 }

@@ -1,2 +1,19 @@
+/*
+pluginManagement {
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "kotlin2js") {
+                useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+            }
+        
+if (requested.id.id == "kotlin2js") {
+    useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+}
+}
+    }
+}
+*/
 rootProject.name = 'IntelligencePipeline'
-include 'model', 'service', 'pipeline', 'ui-vok'
+include 'model', 'service', 'pipeline', 'ui-kweb'
+
+
