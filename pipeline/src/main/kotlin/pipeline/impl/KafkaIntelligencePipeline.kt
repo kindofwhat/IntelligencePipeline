@@ -223,20 +223,19 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
 
         //all MetadataProducers listen on the datarecord topic and produce metadata to the metadata topic
         datarecordStream
-                .transformValues(TimestampValueTransformerSupplier<Long, DataRecord>())
                 //TODO: add some logic here to retry after a while
                 .filter { key, value ->
 
-                    (value.first ?: 0 < this.startTime ||
-                            !value.second.meta.any { metadata ->
+                    (value.timestamp ?: 0 < this.startTime ||
+                            !value.meta.any { metadata ->
                                 metadata.createdBy == prod.name
                             })
                 }
                 .mapValues { value ->
 
-                    println("startTime: $startTime/messageTime: ${value.first}")
+                    println("startTime: $startTime/messageTime: ${value.timestamp}")
 
-                    datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, prod.metadataFor(value.second))
+                    datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, prod.metadataFor(value))
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.record.values.isNotEmpty()
@@ -326,8 +325,10 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                 Consumed.with(Serdes.LongSerde(),
                         KotlinSerde(datatypes.DocumentRepresentation::class.java)))
 
+        //TODO: get the timestamp from the ingestion topic
         ingestionStream.mapValues { documentRepresentation ->
-            datatypes.DataRecordEvent(datatypes.DataRecordCommand.CREATE, datatypes.DataRecord(representation = documentRepresentation, name = documentRepresentation.path))
+            datatypes.DataRecordEvent(datatypes.DataRecordCommand.CREATE, datatypes.DataRecord(representation = documentRepresentation, name = documentRepresentation.path),
+                    timestamp = System.currentTimeMillis())
         }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecordEvent::class.java)))
 
 
@@ -366,7 +367,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                         { datatypes.DataRecord() },
                         { _, dataRecordEvent, dataRecord ->
                             if (dataRecordEvent.command == datatypes.DataRecordCommand.CREATE) {
-                                dataRecord.copy(representation = dataRecordEvent.record.representation, name = dataRecordEvent.record.name)
+                                dataRecord.copy(representation = dataRecordEvent.record.representation, name = dataRecordEvent.record.name, timestamp = dataRecordEvent.timestamp)
                             } else if (dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_METADATA) {
                                 dataRecord.copy(meta = dataRecord.meta + dataRecordEvent.record.meta)
                             } else if (dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION) {
