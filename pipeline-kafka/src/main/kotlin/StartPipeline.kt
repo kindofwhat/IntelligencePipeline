@@ -1,6 +1,5 @@
 import pipeline.IIntelligencePipeline
 import pipeline.impl.KafkaIntelligencePipeline
-import pipeline.impl.MapIntelligencePipeline
 import kotlin.system.exitProcess
 import kotlinx.coroutines.*
 import kotlinx.serialization.ImplicitReflectionSerializer
@@ -15,15 +14,7 @@ fun main(args: Array<String>) {
         println(usage)
         exitProcess(1);
     }
-    if (args.get(0).toLowerCase().equals('m')) {
-        pipeline = MapIntelligencePipeline()
-    } else if (args.get(0).toLowerCase().equals('m')) {
-        if (args.size < 2) {
-            println(usage)
-            exitProcess(1)
-        }
         pipeline = KafkaIntelligencePipeline(args.get(1), "state")
-    }
     val job = GlobalScope.launch {
         println("starting pipeline, enter anything to stop")
         pipeline?.run()

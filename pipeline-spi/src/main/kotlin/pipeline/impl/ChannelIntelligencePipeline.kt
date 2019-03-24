@@ -3,32 +3,26 @@ package pipeline.impl
 import datatypes.DataRecord
 import datatypes.DocumentRepresentation
 import facts.Proposer
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.async
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.consumeEach
-import kotlinx.coroutines.launch
 import participants.*
 import pipeline.capabilities.DefaultCapabilityRegistry
 import util.log
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.CoroutineContext
 
 
-class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
-    override fun <I, U> registerProposer(prod: Proposer<I, U>) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+@ExperimentalCoroutinesApi
+abstract open class ChannelIntelligencePipeline() : pipeline.IIntelligencePipeline {
     override val registry = DefaultCapabilityRegistry()
     val ingestors = mutableListOf<PipelineIngestor>()
 
-    val all = ConcurrentHashMap<Long, DataRecord>()
 
     val ingestionChannel = Channel<DocumentRepresentation>(Int.MAX_VALUE)
     val dataRecordMessageChannel =  BroadcastChannel<DataRecordMessage>(1024)
-    val workers = mutableSetOf<Any>()
 
     sealed class DataRecordMessage(val id: Long, val dataRecord: DataRecord) {
         class Create(id: Long, dataRecord: DataRecord) : DataRecordMessage(id, dataRecord)
@@ -40,23 +34,21 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
 
     }
 
-    override fun dataRecords(id:String): ReceiveChannel<datatypes.DataRecord> {
-        val channel= Channel<DataRecord>()
-        all.values.forEach{GlobalScope.async {channel.send(it)}}
-        return channel
+    override fun <I, U> registerProposer(prod: Proposer<I, U>) {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
-
     /**
      * creates an own stream for this producer and starts it
      */
     override fun registerChunkMetadataProducer(producer: ChunkMetadataProducer) {
-
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 
     /**
      * creates an own stream for this producer and starts it
      */
     override fun registerChunkProducer(name: String, chunkProducer: ChunkProducer) {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 
     /**
@@ -115,7 +107,8 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
 
     override fun registerIngestor(ingestor: participants.PipelineIngestor) {
         ingestors.add(ingestor)
-        GlobalScope.async {
+        GlobalScope.launch {
+
             log("start ingestor ")
             ingestor.ingest(ingestionChannel)
             log("done ingestor")
@@ -123,7 +116,7 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
     }
 
     override fun stop() {
-
+//        job.cancel()
         ingestionChannel.close()
         dataRecordMessageChannel.close()
     }
@@ -135,13 +128,6 @@ class MapIntelligencePipeline() : pipeline.IIntelligencePipeline {
                 val dataRecord = DataRecord(name = doc.path, representation = doc)
                 dataRecordMessageChannel.send(DataRecordMessage.Create(doc.path.hashCode().toLong(), dataRecord))
             }
-        }
-        ingestionChannel.close()
-
-        registerSideEffect("putting") { k, v ->
-            log("putting $v")
-            //TODO: somehow make sure always the last result is stored
-            all.set(k, v)
         }
     }
 }

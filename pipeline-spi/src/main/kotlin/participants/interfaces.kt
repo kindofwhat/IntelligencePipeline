@@ -44,7 +44,7 @@ interface ChunkMetadataProducer : PipelineParticipant {
 }
 
 /**
- * creates a stream of "chunks" of a datarecord. Those chunks may be paragraphs, sentences, words
+ * creates a stream of "chunks" of a datarecord. Those chunks may be pages, paragraphs, sentences, words
  */
 interface ChunkProducer : PipelineParticipant {
     suspend fun chunks(record: datatypes.DataRecord, recordId:Long):Sequence<datatypes.Chunk>

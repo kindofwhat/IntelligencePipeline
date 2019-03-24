@@ -10,7 +10,7 @@ fun createPipeline(hostUrl:String, stateDir:String,
                    ingestors: List<PipelineIngestor> = emptyList(),
                    producers:List<MetadataProducer> = emptyList()): IIntelligencePipeline {
     val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline1")
-    //val pipeline = MapIntelligencePipeline()
+    //val pipeline = ChannelIntelligencePipeline()
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
     pipeline.registerSideEffect("printer", { key, value -> println(">>>$key: $value<<<") })
