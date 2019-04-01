@@ -1,14 +1,12 @@
 package datatypes
 
+import facts.Proposition
+import kotlinx.serialization.Optional
 import kotlinx.serialization.Serializable
-import facts.PropositionScore
-import  facts.Proposition
-enum class ChunkCommand { START, ADD, APPEND,
-    INSERT,UPDATE,MERGE, DELETE, LAST }
-enum class ChunkType { GENERAL, PAGE, PARAGRAPH,SENTENCE,WORD }
+
 
 @Serializable
-data class Chunk(val type: ChunkType = ChunkType.GENERAL, val command: ChunkCommand = ChunkCommand.ADD,
+data class Chunk(val type: String = "GENERAL", val command: String = "ADD",
                  val index:Long=-1, val parentId:Long=-1, val content:String="", val metadata: Metadata = Metadata())
 
 enum class BaseCommand { INSERT, UPDATE, UPSERT, DELETE }
@@ -38,10 +36,10 @@ data class DocumentRepresentation(val path:String="",
 @Serializable
 data class DataRecord(val name: String="",
                       val timestamp: Long = 0L,
-                      val representation: DocumentRepresentation = DocumentRepresentation(),
-                      val additionalRepresentations: Set<DocumentRepresentation> = mutableSetOf(),
-                      val meta: Set<Metadata> = mutableSetOf(),
-                      val propositions: Set<Proposition<*>> = mutableSetOf())
+                      @Optional val representation: DocumentRepresentation = DocumentRepresentation(),
+                      @Optional val additionalRepresentations: Set<DocumentRepresentation> = mutableSetOf(),
+                      @Optional val meta: Set<Metadata> = mutableSetOf(),
+                      @Optional val propositions: Set<Proposition<Any>> = mutableSetOf())
 
 @Serializable
 data class DataRecordWithChunks(val dataRecord: DataRecord= DataRecord(), val chunks: Set<Chunk> = mutableSetOf())

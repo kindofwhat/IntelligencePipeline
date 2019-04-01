@@ -76,12 +76,12 @@ class StanfordNlpSentenceChunkProducer(val lookup: CapabilityLookupStrategy):Chu
                 // these are all the sentences in this document
                 // a CoreMap is essentially a Map that uses class objects as keys and has values with custom types
                 val sentences = document.get(CoreAnnotations.SentencesAnnotation::class.java)
-                yield(datatypes.Chunk(type = datatypes.ChunkType.SENTENCE, command = datatypes.ChunkCommand.START, index = 0L, parentId = recordId))
+                yield(datatypes.Chunk(type = "SENTENCE", command = "START", index = 0L, parentId = recordId))
                 var idx:Long=0
                 for (sentence in sentences) {
-                    yield(datatypes.Chunk(type = datatypes.ChunkType.SENTENCE, content = sentence.toString(), index = idx++, parentId = recordId))
+                    yield(datatypes.Chunk(type = "SENTENCE", content = sentence.toString(), index = idx++, parentId = recordId))
                 }
-                yield(datatypes.Chunk(type = datatypes.ChunkType.SENTENCE, command = datatypes.ChunkCommand.LAST, index = 0L, parentId = recordId))
+                yield(datatypes.Chunk(type = "SENTENCE", command ="LAST", index = 0L, parentId = recordId))
             }
         }
         return emptySequence()

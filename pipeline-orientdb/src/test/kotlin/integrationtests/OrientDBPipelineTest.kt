@@ -24,6 +24,7 @@ class OrientDBPipelineTest {
             ingestors.forEach { pipeline.registerIngestor(it) }
             producers.forEach { pipeline.registerMetadataProducer(it) }
             val testDir = "$baseDir/out/test"
+//            val testDir = "/home/christian/Dokumente"
 
 
             pipeline.registry.register(FileOriginalContentCapability())
@@ -48,7 +49,7 @@ class OrientDBPipelineTest {
         fun runPipeline(pipeline: OrientDBPipeline,
                         predicate: (datatypes.DataRecord) -> Boolean,
                         expectedResults: Int,
-                        timeout: Long = 60000L,
+                        timeout: Long = 1800000L,
                         id: String = ""): List<datatypes.DataRecord> {
             val view = mutableListOf<DataRecord>()
             runBlocking {
@@ -56,7 +57,7 @@ class OrientDBPipelineTest {
                     pipeline.run()
                 }
                 job.join()
-                sleep(4000)
+                sleep(timeout)
                 withTimeout(timeout) {
                     var i = 0
                     while(i<expectedResults) {
@@ -116,13 +117,13 @@ class OrientDBPipelineTest {
         pipeline.stop()
     }
 
-    @Ignore
+    @Test
     @Throws(Exception::class)
     fun testLargerDirectory() {
         val name = "testLargeDirectory"
 
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("c:\\Users\\Christian\\Documents\\Architecture")), emptyList())
+                listOf(DirectoryIngestor("/home/christian/Dokumente")), emptyList())
 
         pipeline.registerMetadataProducer(HashMetadataProducer())
         val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)

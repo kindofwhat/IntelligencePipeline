@@ -3,8 +3,7 @@ package orientdb
 import com.orientechnologies.common.exception.OException
 import com.orientechnologies.orient.core.db.*
 import com.orientechnologies.orient.core.db.document.ODatabaseDocument
-import com.orientechnologies.orient.core.metadata.schema.OClass
-import com.orientechnologies.orient.core.metadata.schema.OType
+import com.orientechnologies.orient.core.record.impl.ODocument
 import com.orientechnologies.orient.core.sql.executor.OResult
 import datatypes.Chunk
 import datatypes.DataRecord
@@ -21,11 +20,6 @@ import pipeline.capabilities.DefaultCapabilityRegistry
 import util.log
 import kotlin.coroutines.CoroutineContext
 
-@Serializable
-data class OrientDataRecord(val id: String = "", val dataRecord: DataRecord = DataRecord())
-@Serializable
-data class OrientChunk(val id: String = "", val chunk: Chunk = Chunk())
-
 typealias ActionDecider = (DataRecord) -> Boolean
 typealias RecordManipulator = (DataRecord) -> DataRecord
 
@@ -37,6 +31,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
 
 
     val orient: OrientDB
+    val korient:KOrient
     override val registry = DefaultCapabilityRegistry()
 
     val ingestors = mutableListOf<PipelineIngestor>()
@@ -49,11 +44,31 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
 
         orient = OrientDB(connection, user, password, OrientDBConfig.defaultConfig())
         pool = ODatabasePool(orient,dbName,user,password)
-        orient.createIfNotExists(dbName, ODatabaseType.MEMORY)
-        val session = orient.open(dbName, user, password)
+        val loaders = mutableMapOf<String, Loader<Any>>()
+        loaders.put(DataRecord::class.simpleName?:"", FieldLoader("name"))
+        loaders.put(DocumentRepresentation::class.simpleName?:"", FieldLoader("path"))
+        //loaders.put(Metadata::class.simpleName?:"", FieldLoader("path"))
+        loaders.put(Chunk::class.simpleName?:"")  { session,  c ->
+            val chunk = c as Chunk
+            var res:ODocument? = null
+            val result = session.query("SELECT FROM Chunk WHERE index = ${chunk.index}  and parentId = ${chunk.parentId}")
+            if (result.hasNext()) {
+                val ores = result.next()
+                val existingDocument = ores.toElement() as ODocument
+                result.close()
+                res = existingDocument
+            }
+            res
+        }
 
-        createOrientDocumentClassWithIndex(session, OrientDataRecord::class.simpleName ?: "OrientDataRecord", "id")
-        createOrientDocumentClassWithIndex(session, OrientChunk::class.simpleName ?: "OrientChunk", "id")
+
+        korient = KOrient(connection, dbName, user, password,loaders)
+        if(!orient.exists(dbName)) {
+            orient.createIfNotExists(dbName, ODatabaseType.MEMORY)
+            korient.createSchema(DataRecord::class)
+            korient.createSchema(Chunk::class)
+        }
+
     }
 
     private fun idForDataRecord(dataRecord: DataRecord): Long {
@@ -69,7 +84,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
     private fun liveSubscriber(session: ODatabaseSession,
                                actionDecider: ActionDecider,
                                recordManipulator: RecordManipulator) {
-        session.live("LIVE SELECT FROM ${OrientDataRecord::class.simpleName}", DataRecordsLiveQueryListener(session, actionDecider, recordManipulator))
+        session.live("LIVE SELECT FROM ${DataRecord::class.simpleName}", DataRecordsLiveQueryListener(session, korient, actionDecider, recordManipulator))
     }
 
     /**
@@ -82,25 +97,24 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         }, { dataRecord ->
             val metadata = prod.metadataFor(dataRecord)
             val res = dataRecord.copy(meta = dataRecord.meta + metadata)
-            persist(session, OrientDataRecord("" + idForDataRecord(dataRecord), res), "id")
+            korient.save(res)
             res
         })
     }
 
     override fun registerChunkMetadataProducer(producer: ChunkMetadataProducer) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        TODO("not implemented") //To change body of created korient use File | Settings | File Templates.
     }
 
     override fun registerChunkProducer(name: String, chunkProducer: ChunkProducer) {
         val session = orient.open(dbName, user, password)
         liveSubscriber(session, { dataRecord ->
-            //TODO: how to find out if the producer has already run?
             true
         }, { dataRecord ->
             launch {
                 chunkProducer.chunks(dataRecord, idForDataRecord(dataRecord)).forEachIndexed { index, chunk ->
 
-                    persist(pool.acquire(), OrientChunk (idForChunk(dataRecord,chunkProducer,chunk),chunk), "id")
+                    korient.save( chunk)
                 }
             }
             dataRecord
@@ -116,7 +130,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
     }
 
     override fun <I, U> registerProposer(proposer: Proposer<I, U>) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        TODO("not implemented") //To change body of created korient use File | Settings | File Templates.
     }
 
     override fun registerDocumentRepresentationProducer(prod: DocumentRepresentationProducer) {
@@ -125,7 +139,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         }, { dataRecord ->
             val representation = prod.documentRepresentationFor(dataRecord)
             val res = dataRecord.copy(additionalRepresentations = dataRecord.additionalRepresentations + representation)
-            persist(pool.acquire(), OrientDataRecord("" + idForDataRecord(dataRecord), res), "id")
+            korient.save(res)
             res
         })
     }
@@ -151,9 +165,8 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         }
         launch {
             ingestionChannel.consumeEach { doc ->
-                val dataRecord = OrientDataRecord("" + doc.path.hashCode(), DataRecord(name = doc.path, representation = doc))
-
-                persist(pool.acquire(), dataRecord, "id")
+                val dataRecord = DataRecord(name = doc.path, representation = doc)
+                korient.save(dataRecord)
             }
         }
     }
@@ -164,13 +177,13 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
 
         val session = orient.open(dbName, user, password)
         session.activateOnCurrentThread()
-        val res = session.query("SELECT FROM ${OrientDataRecord::class.simpleName}")
+        val res = session.query("SELECT FROM ${DataRecord::class.simpleName}")
 
         while (res.hasNext()) {
-            val maybeDataRecord = toObject(res.next(), OrientDataRecord::class.java)
+            val maybeDataRecord = korient.toObject(res.next(), DataRecord::class.java)
             if (maybeDataRecord != null) {
                 launch {
-                    channel.send(maybeDataRecord.dataRecord)
+                    channel.send(maybeDataRecord)
                 }
             }
         }
@@ -178,6 +191,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
     }
 
     private class DataRecordsLiveQueryListener(val session: ODatabaseSession,
+                                               val korient:KOrient,
                                                val actionDecider: ActionDecider,
                                                val recordManipulator: RecordManipulator) : OLiveQueryResultListener {
         override fun onError(database: ODatabaseDocument?, exception: OException?) {
@@ -190,15 +204,13 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         }
 
         private fun handleDataRecord(data: OResult?) {
-            val orientRecord = toObject(data, OrientDataRecord::class.java)
-            val dataRecord = orientRecord?.dataRecord
+            val dataRecord = korient.toObject(data, DataRecord::class.java)
 
             if (dataRecord != null && actionDecider.invoke(dataRecord)) {
                 val newRecord = recordManipulator.invoke(dataRecord)
                 if (newRecord != dataRecord) {
                     log("newRecord $newRecord")
-                    val persistedRecord = OrientDataRecord(orientRecord.id, newRecord)
-                    persist(session, persistedRecord, "id")
+                    korient.save(newRecord)
                 }
             }
 

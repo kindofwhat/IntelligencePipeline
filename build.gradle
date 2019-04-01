@@ -56,6 +56,10 @@ configure(subprojects.findAll {it.name != 'ui' && it.name != 'model' && it.name 
         systemProperties = System.properties
     }
 
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
+        kotlinOptions.freeCompilerArgs += ["-Xuse-experimental=kotlinx.serialization.ImplicitReflectionSerializer"]
+    }
+
 
     dependencies {
         implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
