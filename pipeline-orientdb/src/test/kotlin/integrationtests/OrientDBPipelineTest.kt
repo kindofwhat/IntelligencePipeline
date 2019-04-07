@@ -1,10 +1,13 @@
 package integrationtests
 
+import com.orientechnologies.orient.core.db.OrientDB
+import com.orientechnologies.orient.core.db.OrientDBConfig
 import datatypes.DataRecord
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.filter
+import kotlinx.coroutines.channels.take
+import kotlinx.coroutines.channels.toList
+import org.junit.Before
 import org.junit.Ignore
 import org.junit.Test
 import orientdb.OrientDBPipeline
@@ -17,14 +20,17 @@ class OrientDBPipelineTest {
 
     companion object {
         val baseDir = File(".").absolutePath
+        val connection = "remote:localhost"
+        val db = "ip"
+        val user = "root"
+        val password = "root"
 
         fun createPipeline(name: String, ingestors: List<PipelineIngestor>, producers: List<MetadataProducer>): OrientDBPipeline {
-            val pipeline = orientdb.OrientDBPipeline("remote:localhost", "ip", "root", "root")
+            val pipeline = orientdb.OrientDBPipeline(connection, db, user, password)
 //            val pipeline = OrientDBPipeline("memory:", name, "admin", "admin")
             ingestors.forEach { pipeline.registerIngestor(it) }
             producers.forEach { pipeline.registerMetadataProducer(it) }
             val testDir = "$baseDir/out/test"
-//            val testDir = "/home/christian/Dokumente"
 
 
             pipeline.registry.register(FileOriginalContentCapability())
@@ -45,29 +51,47 @@ class OrientDBPipelineTest {
             return pipeline
         }
 
+        @Before
+        private fun clearTables() {
+            val config = OrientDBConfig.defaultConfig()
+            val orient = OrientDB(connection, user, password, config)
+            val db = orient.open(db, user, password)
+            db.command("DELETE FROM DataRecord")
+            db.command("DELETE FROM DocumentRepresentation")
+            db.command("DELETE FROM Chunk")
+            db.commit()
+
+
+        }
 
         fun runPipeline(pipeline: OrientDBPipeline,
                         predicate: (datatypes.DataRecord) -> Boolean,
                         expectedResults: Int,
-                        timeout: Long = 1800000L,
+                        timeout: Long = 40000L,
                         id: String = ""): List<datatypes.DataRecord> {
-            val view = mutableListOf<DataRecord>()
+            var view = listOf<DataRecord>()
+            clearTables()
             runBlocking {
                 val job = GlobalScope.launch {
                     pipeline.run()
                 }
                 job.join()
-                sleep(timeout)
+                // sleep(timeout)
                 withTimeout(timeout) {
-                    var i = 0
-                    while(i<expectedResults) {
-                        val dataRecords = pipeline.dataRecords(id)
-                        val record = dataRecords.receive()
-                        if(predicate(record)) {
-                            view.add(record)
-                            i++
+                    var ok = false;
+                    while (!ok) {
+                        try {
+                            withTimeout(500) {
+                                view = pipeline.dataRecords(id)
+                                        .filter { predicate(it) }.take(expectedResults).toList()
+                                println("ok: ${view.size}")
+                                ok = true
+                            }
+
+                        } catch (e: TimeoutCancellationException) {
+                            println("timeout, retrying")
+                            sleep(500)
                         }
-                        i=expectedResults
                     }
                 }
                 pipeline.stop()
@@ -135,7 +159,6 @@ class OrientDBPipelineTest {
     }
 
 
-
     @Test
     @Throws(Exception::class)
     fun testStanfordNlpParser() {
@@ -150,9 +173,12 @@ class OrientDBPipelineTest {
         pipeline.registerMetadataProducer(tikaMetadataProducer)
 
         val view = runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == nlpParserProducer.name } }, 3)
+//        val view = runPipeline(pipeline, { kv -> true }, 3)
+        view.map { dataRecord -> dataRecord.meta }
+                .map { metas -> metas.find { metadata -> metadata.createdBy == nlpParserProducer.name }}
+                .forEach { meta-> println(meta)}
         pipeline.stop()
     }
-
 
 
     @Test
@@ -165,7 +191,6 @@ class OrientDBPipelineTest {
         runPipeline(pipeline, { kv -> kv.meta.any { metadata -> metadata.createdBy == TikaMetadataProducer(pipeline.registry).name } }, 3)
         pipeline.stop()
     }
-
 
 
 }

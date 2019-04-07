@@ -6,11 +6,7 @@ import com.orientechnologies.orient.core.db.OrientDBConfig
 import com.orientechnologies.orient.core.metadata.schema.OType
 import com.orientechnologies.orient.core.record.impl.ODocument
 import junit.framework.Assert.*
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.channels.takeWhile
-import kotlinx.coroutines.channels.toCollection
 import kotlinx.coroutines.channels.toList
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.Serializable
@@ -18,7 +14,6 @@ import org.junit.Test
 import orientdb.FieldLoader
 import orientdb.Loader
 import orientdb.KOrient
-import kotlin.streams.toList
 
 
 @Serializable
@@ -80,7 +75,11 @@ class KOrientTest {
 
     @Test fun testPersistAndReload() {
         val dbName = "testPersistAndReload"
-//        val db = OrientDB("memory", OrientDBConfig.defaultConfig()        val result = session.query("SELECT FROM ${className} WHERE ${fieldName} = '${fieldValue}'")
+        val db = OrientDB("remote:localhost", "root", "root", OrientDBConfig.defaultConfig())
+
+        if(db.exists(dbName)) db.drop(dbName)
+        db.create(dbName, ODatabaseType.MEMORY)
+
         val loaders = mutableMapOf<String, Loader<Any>>()
 
         //A, B and C are leading classes
@@ -111,19 +110,19 @@ class KOrientTest {
 
         val c = C(a=a, b=b, m1=  mapOf("a2" to b2), m2 = mapOf("one" to 1, "two" to 2), s = setOf(b))
 
-        korient.save(a)
-        korient.save(b)
-        korient.save(a2)
-        korient.save(c)
+        korient.saveDocument(a)
+        korient.saveDocument(b)
+        korient.saveDocument(a2)
+        korient.saveDocument(c)
 
 
         runBlocking {
-            val aRes = korient.queryAll(A::class.java).toList()
+            val aRes = korient.queryAll(A::class).toList()
             assertEquals(2, aRes.size)
             assertEquals(a,aRes.get(0))
             assertEquals(a2,aRes.get(1))
             //b2 is saved with a
-            val cRes = korient.queryAll(C::class.java).toList()
+            val cRes = korient.queryAll(C::class).toList()
             assertEquals(1, cRes.size)
             assertEquals(c,cRes.get(0))
         }
@@ -134,7 +133,11 @@ class KOrientTest {
     @Test
      fun testPersistAndReloadWithInnerClasses() {
         val dbName = "testPersistAndReloadWithInnerClasses"
-//        val db = OrientDB("memory", OrientDBConfig.defaultConfig()        val result = session.query("SELECT FROM ${className} WHERE ${fieldName} = '${fieldValue}'")
+        val db = OrientDB("remote:localhost", "root", "root", OrientDBConfig.defaultConfig())
+
+        if(db.exists(dbName)) db.drop(dbName)
+        db.create(dbName, ODatabaseType.MEMORY)
+
         val loaders = mutableMapOf<String, Loader<Any>>()
         loaders.put("A", FieldLoader("a"))
         loaders.put("B", FieldLoader("b"))
@@ -154,21 +157,21 @@ class KOrientTest {
 
         val d = D("123", c, setOf(c), mapOf("1" to c), listOf(c))
 
-        korient.save(a)
-        korient.save(b)
-        korient.save(a2)
-        korient.save(d)
+        korient.saveDocument(a)
+        korient.saveDocument(b)
+        korient.saveDocument(a2)
+        korient.saveDocument(d)
         runBlocking {
-            val aRes = korient.queryAll(A::class.java).toList()
+            val aRes = korient.queryAll(A::class).toList()
             assertEquals(2, aRes.size)
             assertEquals(a,aRes.get(0))
             assertEquals(a2,aRes.get(1))
             //b2 is saved with a
-            val bRes = korient.queryAll(B::class.java).toList()
+            val bRes = korient.queryAll(B::class).toList()
             assertEquals(2, bRes.size)
             assertEquals(b,bRes.get(0))
             assertEquals(b2,bRes.get(1))
-            val dRes = korient.queryAll(D::class.java).toList()
+            val dRes = korient.queryAll(D::class).toList()
             assertEquals(1, dRes.size)
             assertEquals(d,dRes.get(0))
         }

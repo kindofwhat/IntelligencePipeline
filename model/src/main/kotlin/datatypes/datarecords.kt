@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 data class Chunk(val type: String = "GENERAL", val command: String = "ADD",
                  val index:Long=-1, val parentId:Long=-1, val content:String="", val metadata: Metadata = Metadata())
 
-enum class BaseCommand { INSERT, UPDATE, UPSERT, DELETE }
+enum class BaseCommand { CREATE, UPDATE, UPSERT, DELETE }
 
 enum class DataRecordCommand {
     CREATE, UPSERT, DELETE, UPSERT_METADATA, DELETE_METADATA, UPSERT_DOCUMENT_REPRESENTATION,

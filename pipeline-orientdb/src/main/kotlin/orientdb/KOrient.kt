@@ -1,6 +1,6 @@
 package orientdb
 
-import com.orientechnologies.orient.core.db.ODatabasePool
+import com.orientechnologies.orient.core.config.OGlobalConfiguration
 import com.orientechnologies.orient.core.db.ODatabaseSession
 import com.orientechnologies.orient.core.db.OrientDB
 import com.orientechnologies.orient.core.db.OrientDBConfig
@@ -12,14 +12,17 @@ import com.orientechnologies.orient.core.sql.executor.OResult
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.launch
-import kotlinx.serialization.*
+import kotlinx.serialization.ImplicitReflectionSerializer
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
-import org.bouncycastle.cms.RecipientId.password
+import kotlinx.serialization.serializer
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
-import kotlin.reflect.full.*
+import kotlin.reflect.full.declaredMemberProperties
+import kotlin.reflect.full.isSubtypeOf
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.full.starProjectedType
 import kotlin.reflect.jvm.jvmErasure
 
 typealias  Loader<T> = (session: ODatabaseSession, T) -> ODocument?
@@ -41,38 +44,61 @@ class FieldLoader(val fieldName: String) : Loader<Any> {
 }
 
 @ImplicitReflectionSerializer
-class KOrient(connection:String, dbName:String, user:String, password:String, var loaders: MutableMap<String, Loader<Any>> = mutableMapOf()) {
+class KOrient(connection: String, val dbName: String, val user: String, val password: String, var loaders: MutableMap<String, Loader<Any>> = mutableMapOf()) {
 
     private val stack: MutableMap<String, OClass> = mutableMapOf()
 
 
     private val orient: OrientDB
-    private val pool:ODatabasePool
+    //private val pool:ODatabasePool
 
     init {
 
-        orient = OrientDB(connection, user, password, OrientDBConfig.defaultConfig())
-        pool = ODatabasePool(orient, dbName, user, password)
+        val config = OrientDBConfig.defaultConfig()
+        orient = OrientDB(connection, user, password, config)
+        OGlobalConfiguration.LOG_CONSOLE_LEVEL.setValue("FINER")
+        //pool = ODatabasePool(orient, dbName, user, password)
     }
 
-    fun <T : Any> save(obj: T): ODocument? {
-        val session = pool.acquire()
-        val record = createDocument(session, obj)
-        session.activateOnCurrentThread()
-        session.executeWithRetry(10) { mySession ->
-            mySession.activateOnCurrentThread()
-            mySession.save<ODocument>(record)
+    fun <T : Any> saveDocument(obj: T, session: ODatabaseSession?=null): ODocument? {
+        val mySession:ODatabaseSession
+        var close = false
+        if(session == null) {
+            mySession = orient.open(dbName, user, password)
+            close = true
+        } else {
+            mySession = session
         }
-        session.close()
+        var record = createDocument(mySession, obj)
+        mySession.activateOnCurrentThread()
+        mySession.executeWithRetry(10) { innerSession ->
+            innerSession.activateOnCurrentThread()
+            record = createDocument(innerSession, obj)
+            mySession.activateOnCurrentThread()
+            innerSession.save<ODocument>(record)
+            innerSession.commit()
+        }
+        if(close) {
+            mySession.close()
+        }
         return record
     }
 
-    fun <T : Any> queryAll(clazz: Class<T>): ReceiveChannel<T> {
+    fun <T : Any> saveObject(obj: T?): T? {
+        if (obj == null) return null
+        return toObject(saveDocument(obj), obj::class as KClass<T>)
+    }
+
+    fun <T : Any> load(obj: T): T? {
+        return toObject(this.loaders.get(obj::class.simpleName)?.invoke(orient.open(dbName, user, password), obj), obj::class as KClass<T>)
+    }
+
+    fun <T : Any> queryAll(clazz: KClass<T>): ReceiveChannel<T> {
         val channel = Channel<T>()
 
         //todo: custom scope
         GlobalScope.launch {
-            val session = pool.acquire()
+            val session = orient.open(dbName, user, password)
             session.activateOnCurrentThread()
             val res = session.query("SELECT FROM ${clazz.simpleName}")
             while (res.hasNext()) {
@@ -88,19 +114,21 @@ class KOrient(connection:String, dbName:String, user:String, password:String, va
         return channel
     }
 
-    fun createSchema( clazz: KClass<*>?) {
-        val session = pool.acquire()
+    fun createSchema(clazz: KClass<*>?) {
+        val session = orient.open(dbName, user, password)
         session.activateOnCurrentThread()
-        internalCreateSchema(session,clazz)
+        internalCreateSchema(session, clazz)
         session.close()
     }
+
     private fun internalCreateSchema(session: ODatabaseSession, clazz: KClass<*>?) {
         val name = clazz?.simpleName
         if (!stack.containsKey(name ?: "") && loaders.containsKey(name)) {
 
             try {
-                session.getMetadata().getSchema().dropClass(name ?:"");
-            } catch (e:OSchemaException){}
+                session.getMetadata().getSchema().dropClass(name ?: "");
+            } catch (e: OSchemaException) {
+            }
             val myClass = session.createClass(name ?: "")
             stack.set(name ?: "", myClass)
 
@@ -113,7 +141,7 @@ class KOrient(connection:String, dbName:String, user:String, password:String, va
                         myClass.createProperty(property.name, OType.EMBEDDED)
 
                     } else {
-                        internalCreateSchema(session,objectClass)
+                        internalCreateSchema(session, objectClass)
                         myClass.createProperty(property.name, OType.LINK, stack.get(objectClass.simpleName))
 
                     }
@@ -133,8 +161,17 @@ class KOrient(connection:String, dbName:String, user:String, password:String, va
     }
 
     @ImplicitReflectionSerializer
-    fun <T : Any> toObject(data: OResult?, obj: Class<T>): T? {
-        val serializer: KSerializer<out T> = obj.newInstance()::class.serializer()
+    fun <T : Any> toObject(data: OResult?, obj: KClass<T>): T? {
+        if (data == null) return null
+        val serializer: KSerializer<out T> = obj.serializer()
+        val dataRecord = Json.nonstrict.parse(serializer, data?.getProperty(JSON_PROPERTY_NAME) ?: "")
+        return dataRecord
+    }
+
+    @ImplicitReflectionSerializer
+    fun <T : Any> toObject(data: ODocument?, obj: KClass<T>): T? {
+        if (data == null) return null
+        val serializer: KSerializer<out T> = obj.serializer()
         val dataRecord = Json.nonstrict.parse(serializer, data?.getProperty(JSON_PROPERTY_NAME) ?: "")
         return dataRecord
     }
@@ -166,7 +203,7 @@ class KOrient(connection:String, dbName:String, user:String, password:String, va
                 val objRecord = createDocument(session, readProperty)
                 record.setProperty(property.name, objRecord)
             } else {
-                val objRecord = save( readProperty)
+                val objRecord = saveDocument(readProperty)
                 record.setProperty(property.name, objRecord?.identity)
 
             }
@@ -193,14 +230,14 @@ class KOrient(connection:String, dbName:String, user:String, password:String, va
                     if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
                         val values = readProperty<List<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { save( it!!) }
+                                .map { saveDocument(it!!) }
                                 .map { it?.identity }
                         record.setProperty(property.name, values)
 
                     } else {
                         val values = readProperty<Set<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { save( it!!) }
+                                .map { saveDocument(it!!) }
                                 .map { it?.identity }.toSet()
                         record.setProperty(property.name, values)
                     }
@@ -217,13 +254,13 @@ class KOrient(connection:String, dbName:String, user:String, password:String, va
                 } else {
                     val values = readProperty<Map<*, *>>(obj, property.name)
                             .filter { it.value != null }
-                            .map { Pair("${it.key}", save( it.value!!)?.identity) }
+                            .map { Pair("${it.key}", saveDocument(it.value!!)?.identity) }
                             .toMap()
                     record.setProperty(property.name, values)
                 }
             }
         } else if (!loaders.containsKey(readPropertyClass.simpleName)) {
-            //don't know how to retrieve object => save it serialized
+            //don't know how to retrieve object => saveDocument it serialized
 
             record.setProperty(property.name, readProperty)
         }

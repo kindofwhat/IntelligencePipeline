@@ -1,5 +1,5 @@
 dependencies {
     compile project(':pipeline-spi')
-    compile 'com.orientechnologies:orientdb-client:3.0.0'
+    compile 'com.orientechnologies:orientdb-client:3.0.18'
 }
 
