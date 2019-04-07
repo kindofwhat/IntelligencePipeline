@@ -110,7 +110,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                                 KotlinSerde(datatypes.Chunk::class.java)))
                         .mapValues { value ->
                             datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT,
-                                    producer.metadataFor(value))
+                                    runBlocking { producer.produce(value)})
                         }
                         .to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.MetadataEvent::class.java)))
         val topology = builder.build()
@@ -140,7 +140,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
         datarecordStream
                 .filter { _, value -> value != null }
                 .flatMap { key, value: datatypes.DataRecord ->
-                    runBlocking { chunkProducer.chunks(value, key) }
+                    runBlocking { chunkProducer.produce(value) }
                             .mapNotNull { valueRes -> KeyValue<Long, datatypes.Chunk>(key, valueRes) }.asIterable()
                 }
                 .mapValues { kv -> kv }
@@ -235,7 +235,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
 
                     println("startTime: $startTime/messageTime: ${value.timestamp}")
 
-                    datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, prod.metadataFor(value))
+                    datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, runBlocking { prod.produce(value)})
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.record.values.isNotEmpty()
@@ -269,7 +269,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                 .filter { _, value -> value != null && !value.additionalRepresentations.any { representation -> representation.createdBy == prod.name } }
                 //TODO: filter out the those that are exactly the same as before!
                 .mapValues { datarecord ->
-                    prod.documentRepresentationFor(datarecord)
+                    runBlocking {  prod.produce(datarecord)}
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     StringUtils.isNotEmpty(value.path)

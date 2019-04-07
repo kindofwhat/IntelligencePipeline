@@ -125,7 +125,7 @@ class OrientDBPipelineTest {
 
         class RogueMetadataProducer() : MetadataProducer {
             override val name = "rogue";
-            override fun metadataFor(record: datatypes.DataRecord): datatypes.Metadata {
+            override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata {
                 throw RuntimeException("na, won't to!")
             }
         }

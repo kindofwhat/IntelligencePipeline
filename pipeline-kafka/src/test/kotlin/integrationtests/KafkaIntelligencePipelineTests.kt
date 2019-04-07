@@ -178,7 +178,7 @@ class KafkaIntelligencePipelineTests {
 
         class RogueMetadataProducer() : MetadataProducer {
             override val name = "rogue";
-            override fun metadataFor(record: datatypes.DataRecord): datatypes.Metadata {
+            suspend override fun produce(record: datatypes.DataRecord): datatypes.Metadata {
                 throw RuntimeException("na, won't to!")
             }
         }
@@ -442,6 +442,6 @@ private class TestIngestor(val content:List<String>) :PipelineIngestor {
         }
     }
 
-    override val name = "test"
+    val name = "test"
 
 }

@@ -36,7 +36,7 @@ class MetadataProducerTests {
         val dataRecord = datatypes.DataRecord(name = "testDataRecord",
                 representation = datatypes.DocumentRepresentation("$pathIn/test3.docx"))
 //                representation = DocumentRepresentation("$pathIn/../Speech and Language Processing.pdf"))
-        val docrep= docrepProd.documentRepresentationFor(dataRecord)
+        val docrep= runBlocking { docrepProd.produce(dataRecord)}
         println(docrep)
         assert(docrep.createdBy == docrepProd.name)
     }
@@ -46,7 +46,7 @@ class MetadataProducerTests {
         val dataRecord = datatypes.DataRecord(name = "testDataRecord",
                 representation = datatypes.DocumentRepresentation("$pathIn/test3.docx"))
 //                representation = DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
-        val metadata = runBlocking { handler.metadataFor(dataRecord) }
+        val metadata = runBlocking { handler.produce(dataRecord) }
         println(metadata)
         assert(metadata.values.size>0)
     }
@@ -57,7 +57,7 @@ class MetadataProducerTests {
         val dataRecord = datatypes.DataRecord(name = "testDataRecord",
                 representation = datatypes.DocumentRepresentation("$pathIn/test3.docx"))
 //                representation = DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
-        val metadata =  runBlocking { handler.metadataFor(dataRecord) }
+        val metadata =  runBlocking { handler.produce(dataRecord) }
         println(metadata)
         assert(metadata.values.size>0)
     }
@@ -69,7 +69,7 @@ class MetadataProducerTests {
         val dataRecord = datatypes.DataRecord(name = "testDataRecord",
 //                representation = DocumentRepresentation("$pathIn/test3.docx"))
                 representation = datatypes.DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
-        val metadata =  runBlocking { handler.metadataFor(dataRecord) }
+        val metadata =  runBlocking { handler.produce(dataRecord) }
         println(metadata)
         assert(metadata.values.size>0)
     }
@@ -84,7 +84,7 @@ class MetadataProducerTests {
         val dataRecord = datatypes.DataRecord(name = "testDataRecord",
                 representation = DocumentRepresentation("$pathIn/test3.docx"))
                 //representation = datatypes.DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
-        val metadata =  runBlocking { handler.metadataFor(dataRecord) }
+        val metadata =  runBlocking { handler.produce(dataRecord) }
         println(metadata)
         assert(metadata.values.size>0)
     }

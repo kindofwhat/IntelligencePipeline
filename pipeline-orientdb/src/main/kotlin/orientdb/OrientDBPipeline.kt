@@ -29,32 +29,21 @@ typealias RecordConsumer = (DataRecord) -> Unit
 
 abstract class Command<T>(var record: T, var handledBy: Set<String>)
 class DataRecordUpdated(record: DataRecord, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
-class ChunkCreated(record: DataRecord, chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
+
 class AdditionalDocumentRepresentationsUpdated(record: DataRecord, val documentRepresentations: DocumentRepresentation, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
 class MetadataUpdated(record: DataRecord, val meta: Metadata, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
 
+class ChunkCreated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
+class ChunkUpdated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
+
+
 @ExperimentalCoroutinesApi
 @UseExperimental(ImplicitReflectionSerializer::class)
-class OrientDBPipeline(connection: String, val dbName: String, val user: String, val password: String) : IIntelligencePipeline, CoroutineScope {
-    lateinit var job: Job
-    override val coroutineContext: CoroutineContext
-        //get() = Dispatchers.Default + job
-        get() = Executors.newFixedThreadPool(500).asCoroutineDispatcher() + job
-
+class OrientDBPipeline(connection: String, val dbName: String, val user: String, val password: String) : ChannelIntelligencePipeline() {
 
     val orient: OrientDB
     val korient: KOrient
     override val registry = DefaultCapabilityRegistry()
-
-    val ingestors = mutableListOf<PipelineIngestor>()
-    val metadataProducers = mutableMapOf<UUID, MetadataProducer>()
-    val chunkProducers = mutableMapOf<UUID, ChunkProducer>()
-    val documentRepresentationProducers = mutableMapOf<UUID, DocumentRepresentationProducer>()
-    val ingestionChannel = Channel<DocumentRepresentation>(Int.MAX_VALUE)
-
-    val commandChannel = BroadcastChannel<Command<DataRecord>>(10_000)
-
-
     private val pool: ODatabasePool
 
     init {
@@ -68,7 +57,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         loaders.put(Chunk::class.simpleName ?: "") { session, c ->
             val chunk = c as Chunk
             var res: ODocument? = null
-            val result = session.query("SELECT FROM Chunk WHERE index = ${chunk.index}  and parentId = ${chunk.parentId}")
+            val result = session.query("SELECT FROM Chunk WHERE index = ${chunk.index}  and parentId = ${chunk.parentId} and type='${chunk.type}'")
             if (result.hasNext()) {
                 val ores = result.next()
                 val existingDocument = ores.toElement() as ODocument
@@ -88,149 +77,12 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
 
     }
 
-    private fun idForDataRecord(dataRecord: DataRecord): Long {
-        return dataRecord.representation.path.hashCode().toLong()
-    }
-
-    private fun idForChunk(dataRecord: DataRecord, chunkProducer: ChunkProducer, chunk: Chunk): String {
-        return "${chunkProducer.name}_${idForDataRecord(dataRecord)}_${chunk.index}"
-    }
-
     /**
-     * generic functional handler
+     * watch the pipeline "live"
      */
     private fun liveSubscriber(session: ODatabaseSession,
                                consumer: RecordConsumer) {
         session.live("LIVE SELECT FROM ${DataRecord::class.simpleName}", DataRecordsLiveQueryListener(korient, consumer))
-    }
-
-    /**
-     * creates an own stream for this producer and starts it
-     */
-    override fun registerMetadataProducer(prod: MetadataProducer) {
-        metadataProducers.put(UUID.randomUUID(), prod)
-    }
-
-
-    override fun registerChunkMetadataProducer(producer: ChunkMetadataProducer) {
-        TODO("not implemented") //To change body of created korient use File | Settings | File Templates.
-    }
-
-    override fun registerChunkProducer(name: String, chunkProducer: ChunkProducer) {
-        chunkProducers.put(UUID.randomUUID(), chunkProducer)
-    }
-
-    override fun registerSideEffect(name: String, sideEffect: PipelineSideEffect) {
-
-        launch {
-            for (command in commandChannel.openSubscription()) {
-                sideEffect.invoke(-1, command.record)
-            }
-        }
-    }
-
-    override fun <I, U> registerProposer(proposer: Proposer<I, U>) {
-        TODO("not implemented") //To change body of created korient use File | Settings | File Templates.
-    }
-
-    override fun registerDocumentRepresentationProducer(prod: DocumentRepresentationProducer) {
-        documentRepresentationProducers.put(UUID.randomUUID(), prod)
-    }
-
-    override fun registerIngestor(ingestor: participants.PipelineIngestor) {
-        ingestors.add(ingestor)
-    }
-
-    override fun stop() {
-        job.cancel()
-        ingestionChannel.close()
-        commandChannel.close()
-
-    }
-
-    override fun run() {
-        job = Job()
-        launch {
-            ingestors.forEach { ingestor ->
-                log("start ingestor ")
-                ingestor.ingest(ingestionChannel)
-                log("done ingestor")
-            }
-        }
-        launch {
-            for (command in commandChannel.openSubscription()) {
-                val record = command.record
-                log(command.toString())
-                when (command) {
-                    //this record has been saved in the db
-                    is DataRecordUpdated -> {
-                        metadataProducers.filter { (uuid, _) ->
-                            !command.handledBy.contains(uuid.toString())
-                        }.map { (uuid, producer) ->
-                            launch {
-                                val metadata = producer.metadataFor(record)
-                                commandChannel.send(MetadataUpdated(command.record, metadata, handledBy = command.handledBy + uuid.toString()))
-
-                            }
-                        }
-                        documentRepresentationProducers.filter { (uuid, _) ->
-                            !command.handledBy.contains(uuid.toString())
-                        }.map { (uuid, producer) ->
-                            launch {
-                                val docRep = producer.documentRepresentationFor(record)
-                                commandChannel.send(AdditionalDocumentRepresentationsUpdated(command.record, docRep, handledBy = command.handledBy + uuid.toString()))
-
-                            }
-                        }
-                        chunkProducers.filter { (uuid, _) ->
-                            !command.handledBy.contains(uuid.toString())
-                        }.map { (uuid, producer) ->
-                            launch {
-                                producer.chunks(command.record, idForDataRecord(command.record)).forEach { chunk ->
-                                    commandChannel.send(ChunkCreated(command.record, chunk, handledBy = command.handledBy + "${chunk.parentId}-${chunk.index}-$uuid"))
-                                }
-
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        launch {
-            for (command in commandChannel.openSubscription()) {
-                var dbRecord = korient.load(command.record)
-                if (dbRecord == null) {
-                    dbRecord = korient.saveObject(command.record)
-                }
-
-                if(dbRecord != null) {
-                    var updatedRecord = dbRecord.copy()
-                    when (command) {
-                        is MetadataUpdated -> {
-                            updatedRecord = updatedRecord.copy(meta = updatedRecord.meta + command.meta)
-                        }
-                        is AdditionalDocumentRepresentationsUpdated -> {
-                            updatedRecord = updatedRecord.copy(additionalRepresentations = updatedRecord.additionalRepresentations + command.documentRepresentations)
-                        }
-                        is ChunkCreated -> {
-
-                        }
-                    }
-                    if (!updatedRecord.equals(dbRecord)) {
-                        korient.saveObject(updatedRecord)
-                        commandChannel.send(DataRecordUpdated(updatedRecord, emptySet()))
-                    }
-                }
-            }
-        }
-
-        launch {
-
-            ingestionChannel.consumeEach { doc ->
-                val dataRecord = DataRecord(name = doc.path, representation = doc)
-                commandChannel.send(DataRecordUpdated(dataRecord, emptySet()))
-            }
-        }
     }
 
 
@@ -261,6 +113,39 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         return channel
     }
     */
+    override fun launchPersister() {
+        launch {
+            for (command in commandChannel.openSubscription()) {
+                var dbRecord = korient.load(command.record)
+                if (dbRecord == null) {
+                    dbRecord = korient.saveObject(command.record)
+                }
+
+                if (dbRecord != null) {
+                    var updatedRecord = dbRecord.copy()
+                    when (command) {
+                        is MetadataUpdated -> {
+                            updatedRecord = updatedRecord.copy(meta = updatedRecord.meta + command.meta)
+                        }
+                        is AdditionalDocumentRepresentationsUpdated -> {
+                            updatedRecord = updatedRecord.copy(additionalRepresentations = updatedRecord.additionalRepresentations + command.documentRepresentations)
+                        }
+                        is ChunkCreated -> {
+                            val savedChunk = korient.saveObject(command.chunk)
+                            if (command.chunk != savedChunk && savedChunk != null) {
+                                commandChannel.send(ChunkUpdated(command.record, savedChunk, emptySet()))
+                            }
+                        }
+                    }
+                    if (!updatedRecord.equals(dbRecord)) {
+                        korient.saveObject(updatedRecord)
+                        commandChannel.send(DataRecordUpdated(updatedRecord, emptySet()))
+                    }
+                }
+            }
+        }
+
+    }
 
 
     private class DataRecordsLiveQueryListener(val korient: KOrient,
@@ -277,7 +162,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         private fun handleDataRecord(data: OResult?) {
             val dataRecord = korient.toObject(data, DataRecord::class)
 
-            if (dataRecord!=null) {
+            if (dataRecord != null) {
                 consumer.invoke(dataRecord)
             }
 

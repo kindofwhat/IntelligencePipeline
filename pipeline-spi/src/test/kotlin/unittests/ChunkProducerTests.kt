@@ -33,11 +33,11 @@ class ChunkProducerTests {
 
 
         val output = TikaTxtDocumentRepresentationProducer(registry)
-        output.documentRepresentationFor(dataRecord)
+        runBlocking { output.produce(dataRecord)}
 
         val producer = StanfordNlpSentenceChunkProducer(registry)
 
-        val chunks = runBlocking {  producer.chunks(dataRecord,1)}
+        val chunks = runBlocking {  producer.produce(dataRecord)}
 
         chunks.forEach { println(it) }
         assert(chunks.toList().size>0)
