@@ -1,6 +1,6 @@
 package pipeline.impl
 
-import datatypes.DataRecord
+import datatypes.*
 import facts.Proposer
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
@@ -10,6 +10,7 @@ import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.ImplicitReflectionSerializer
+import kotlinx.serialization.Serializable
 import org.apache.commons.lang.StringUtils
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.Producer
@@ -33,6 +34,16 @@ import pipeline.serialize.KotlinSerde
 import pipeline.serialize.serialize
 import util.log
 import java.util.*
+@Serializable
+data class DataRecordWithChunks(val dataRecord: DataRecord= DataRecord(), val chunks: Set<Chunk> = mutableSetOf())
+
+interface Event<C,P>
+@Serializable
+data class DataRecordEvent(val command: DataRecordCommand = DataRecordCommand.UPSERT, val record: DataRecord = DataRecord(), val timestamp: Long = 0L): Event<BaseCommand, DataRecord>
+@Serializable
+data class MetadataEvent(val command: BaseCommand = BaseCommand.UPSERT, val record: Metadata = Metadata()): Event<BaseCommand, Metadata>
+@Serializable
+data class DocumentRepresentationEvent(val command: BaseCommand = BaseCommand.UPSERT, val record: DocumentRepresentation = DocumentRepresentation()): Event<BaseCommand, DocumentRepresentation>
 
 
 @ImplicitReflectionSerializer
@@ -109,10 +120,10 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                         Consumed.with(Serdes.LongSerde(),
                                 KotlinSerde(datatypes.Chunk::class.java)))
                         .mapValues { value ->
-                            datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT,
+                            MetadataEvent(datatypes.BaseCommand.UPSERT,
                                     runBlocking { producer.produce(value)})
                         }
-                        .to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.MetadataEvent::class.java)))
+                        .to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(MetadataEvent::class.java)))
         val topology = builder.build()
 
         val myProp = Properties()
@@ -235,11 +246,11 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
 
                     println("startTime: $startTime/messageTime: ${value.timestamp}")
 
-                    datatypes.MetadataEvent(datatypes.BaseCommand.UPSERT, runBlocking { prod.produce(value)})
+                    MetadataEvent(datatypes.BaseCommand.UPSERT, runBlocking { prod.produce(value)})
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.record.values.isNotEmpty()
-                }.to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.MetadataEvent::class.java)))
+                }.to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(MetadataEvent::class.java)))
 
 
         val topology = builder.build()
@@ -273,8 +284,8 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     StringUtils.isNotEmpty(value.path)
-                }.mapValues { value -> datatypes.DocumentRepresentationEvent(record = value) }
-                .to(DOCUMENTREPRESENTATION_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DocumentRepresentationEvent::class.java)))
+                }.mapValues { value -> DocumentRepresentationEvent(record = value) }
+                .to(DOCUMENTREPRESENTATION_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DocumentRepresentationEvent::class.java)))
 
         val topology = builder.build()
 
@@ -327,39 +338,39 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
 
         //TODO: get the timestamp from the ingestion topic
         ingestionStream.mapValues { documentRepresentation ->
-            datatypes.DataRecordEvent(datatypes.DataRecordCommand.CREATE, datatypes.DataRecord(representation = documentRepresentation, name = documentRepresentation.path),
+            DataRecordEvent(datatypes.DataRecordCommand.CREATE, datatypes.DataRecord(representation = documentRepresentation, name = documentRepresentation.path),
                     timestamp = System.currentTimeMillis())
-        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecordEvent::class.java)))
+        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
 
 
-        val documentRepresentationEventStream = builder.stream<Long, datatypes.DocumentRepresentationEvent>(DOCUMENTREPRESENTATION_EVENT_TOPIC,
+        val documentRepresentationEventStream = builder.stream<Long, DocumentRepresentationEvent>(DOCUMENTREPRESENTATION_EVENT_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
-                        KotlinSerde(datatypes.DocumentRepresentationEvent::class.java)))
+                        KotlinSerde(DocumentRepresentationEvent::class.java)))
 
         documentRepresentationEventStream.mapValues { value ->
             if (value.command == datatypes.BaseCommand.UPSERT) {
-                datatypes.DataRecordEvent(datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION, datatypes.DataRecord(additionalRepresentations = setOf(value.record)))
+                DataRecordEvent(datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION, datatypes.DataRecord(additionalRepresentations = setOf(value.record)))
             } else {
                 throw Exception("Don't know how to handle $value")
             }
-        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecordEvent::class.java)))
+        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
 
 
-        val metadataEventStream = builder.stream<Long, datatypes.MetadataEvent>(METADATA_EVENT_TOPIC,
+        val metadataEventStream = builder.stream<Long, MetadataEvent>(METADATA_EVENT_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
-                        KotlinSerde(datatypes.MetadataEvent::class.java)))
+                        KotlinSerde(MetadataEvent::class.java)))
 
         metadataEventStream.mapValues { value ->
             if (value.command == datatypes.BaseCommand.UPSERT) {
-                datatypes.DataRecordEvent(datatypes.DataRecordCommand.UPSERT_METADATA, datatypes.DataRecord(meta = setOf(value.record)))
+                DataRecordEvent(datatypes.DataRecordCommand.UPSERT_METADATA, datatypes.DataRecord(meta = setOf(value.record)))
             } else {
                 throw Exception("Don't know how to handle $value")
             }
-        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(datatypes.DataRecordEvent::class.java)))
+        }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
 
-        val dataRecordEventStream = builder.stream<Long, datatypes.DataRecordEvent>(DATARECORD_EVENT_TOPIC,
+        val dataRecordEventStream = builder.stream<Long, DataRecordEvent>(DATARECORD_EVENT_TOPIC,
                 Consumed.with(Serdes.LongSerde(),
-                        KotlinSerde(datatypes.DataRecordEvent::class.java)))
+                        KotlinSerde(DataRecordEvent::class.java)))
 
         val consolidatedDataRecordTable = dataRecordEventStream
                 .groupByKey()

@@ -2,7 +2,6 @@ package integrationtests
 
 import datatypes.Chunk
 import datatypes.DataRecord
-import datatypes.DataRecordWithChunks
 import datatypes.DocumentRepresentation
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -24,6 +23,7 @@ import org.junit.Test
 import participants.*
 import participants.file.*
 import pipeline.impl.KafkaIntelligencePipeline
+import pipeline.impl.DataRecordWithChunks
 import pipeline.impl.KafkaIntelligencePipeline.Companion.CHUNK_TOPIC
 import pipeline.impl.KafkaIntelligencePipeline.Companion.DATARECORD_CONSOLIDATED_TOPIC
 import pipeline.impl.KafkaIntelligencePipeline.Companion.DATARECORD_EVENT_TOPIC

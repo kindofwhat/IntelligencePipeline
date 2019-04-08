@@ -9,20 +9,13 @@ import datatypes.Chunk
 import datatypes.DataRecord
 import datatypes.DocumentRepresentation
 import datatypes.Metadata
-import facts.Proposer
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.BroadcastChannel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.launch
 import kotlinx.serialization.ImplicitReflectionSerializer
-import participants.*
-import pipeline.IIntelligencePipeline
 import pipeline.capabilities.DefaultCapabilityRegistry
 import util.log
-import java.util.*
-import java.util.concurrent.Executors
-import kotlin.coroutines.CoroutineContext
 
 typealias RecordConsumer = (DataRecord) -> Unit
 
