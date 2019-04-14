@@ -128,6 +128,7 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
         launch {
 
             ingestionChannel.consumeEach { doc ->
+
                 val dataRecord = DataRecord(name = doc.path, representation = doc)
                 commandChannel.send(DataRecordUpdated(dataRecord, emptySet()))
             }
@@ -147,7 +148,8 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                         }.map { (uuid, producer) ->
                             launch {
                                 val metadata = producer.produce(record)
-                                commandChannel.send(MetadataUpdated(command.record, metadata, handledBy = command.handledBy + uuid.toString()))
+                                if(metadata != null)
+                                    commandChannel.send(MetadataUpdated(command.record, metadata, handledBy =  command.handledBy + uuid.toString()))
 
                             }
                         }
@@ -156,16 +158,19 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                         }.map { (uuid, producer) ->
                             launch {
                                 val docRep = producer.produce(record)
-                                commandChannel.send(AdditionalDocumentRepresentationsUpdated(command.record, docRep, handledBy = command.handledBy + uuid.toString()))
+                                if(docRep != null && !command.record.additionalRepresentations.contains(docRep))
+                                    commandChannel.send(AdditionalDocumentRepresentationsUpdated(command.record, docRep, handledBy = command.handledBy + uuid.toString()))
 
                             }
                         }
                         chunkProducers.filter { (uuid, _) ->
-                            !command.handledBy.contains(uuid.toString())
+                            //TODO: find out how to prevent double calculations
+                            true
                         }.map { (uuid, producer) ->
                             launch {
-                                producer.produce(command.record).forEach { chunk ->
-                                    commandChannel.send(ChunkCreated(command.record, chunk, handledBy = command.handledBy + "${chunk.parentId}-${chunk.index}-$uuid"))
+                                producer.produce(command.record)?.forEach { chunk ->
+                                    commandChannel.send(ChunkCreated(command.record, chunk, handledBy = command.handledBy
+                                            + "${chunk.parent.name}-${chunk.index}-$uuid"))
                                 }
 
                             }

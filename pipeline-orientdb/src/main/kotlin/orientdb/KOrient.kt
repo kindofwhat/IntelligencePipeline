@@ -1,28 +1,26 @@
 package orientdb
 
+import com.orientechnologies.common.concur.ONeedRetryException
 import com.orientechnologies.orient.core.config.OGlobalConfiguration
 import com.orientechnologies.orient.core.db.ODatabaseSession
 import com.orientechnologies.orient.core.db.OrientDB
 import com.orientechnologies.orient.core.db.OrientDBConfig
+import com.orientechnologies.orient.core.db.record.OIdentifiable
+import com.orientechnologies.orient.core.exception.OConcurrentModificationException
 import com.orientechnologies.orient.core.exception.OSchemaException
+import com.orientechnologies.orient.core.id.ORID
 import com.orientechnologies.orient.core.metadata.schema.OClass
 import com.orientechnologies.orient.core.metadata.schema.OType
+import com.orientechnologies.orient.core.record.OElement
 import com.orientechnologies.orient.core.record.impl.ODocument
 import com.orientechnologies.orient.core.sql.executor.OResult
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.launch
-import kotlinx.serialization.ImplicitReflectionSerializer
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.serializer
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
-import kotlin.reflect.full.declaredMemberProperties
-import kotlin.reflect.full.isSubtypeOf
-import kotlin.reflect.full.memberProperties
-import kotlin.reflect.full.starProjectedType
+import kotlin.reflect.full.*
 import kotlin.reflect.jvm.jvmErasure
 
 typealias  Loader<T> = (session: ODatabaseSession, T) -> ODocument?
@@ -32,7 +30,7 @@ class FieldLoader(val fieldName: String) : Loader<Any> {
     override fun invoke(session: ODatabaseSession, p2: Any): ODocument? {
         val className = p2::class.simpleName ?: ""
         val fieldValue = readProperty<Any>(p2, fieldName)
-        val result = session.query("SELECT FROM ${className} WHERE ${fieldName} = '${fieldValue}'")
+        val result = session.query("SELECT FROM ${className} WHERE ${fieldName} = '${fieldValue}' NOCACHE")
         if (result.hasNext()) {
             val res = result.next()
             val existingDocument = res.toElement() as ODocument
@@ -43,10 +41,10 @@ class FieldLoader(val fieldName: String) : Loader<Any> {
     }
 }
 
-@ImplicitReflectionSerializer
 class KOrient(connection: String, val dbName: String, val user: String, val password: String, var loaders: MutableMap<String, Loader<Any>> = mutableMapOf()) {
 
-    private val stack: MutableMap<String, OClass> = mutableMapOf()
+    private val nameToDBClass: MutableMap<String, OClass> = mutableMapOf()
+    private val nameToKotlinClass: MutableMap<String, KClass<Any>> = mutableMapOf()
 
 
     private val orient: OrientDB
@@ -60,33 +58,10 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
         //pool = ODatabasePool(orient, dbName, user, password)
     }
 
-    fun <T : Any> saveDocument(obj: T, session: ODatabaseSession?=null): ODocument? {
-        val mySession:ODatabaseSession
-        var close = false
-        if(session == null) {
-            mySession = orient.open(dbName, user, password)
-            close = true
-        } else {
-            mySession = session
-        }
-        var record = createDocument(mySession, obj)
-        mySession.activateOnCurrentThread()
-        mySession.executeWithRetry(10) { innerSession ->
-            innerSession.activateOnCurrentThread()
-            record = createDocument(innerSession, obj)
-            mySession.activateOnCurrentThread()
-            innerSession.save<ODocument>(record)
-            innerSession.commit()
-        }
-        if(close) {
-            mySession.close()
-        }
-        return record
-    }
 
-    fun <T : Any> saveObject(obj: T?): T? {
+    fun <T : Any> save(obj: T?): T? {
         if (obj == null) return null
-        return toObject(saveDocument(obj), obj::class as KClass<T>)
+        return toObject(saveDocument(obj, rootIds = mutableSetOf()), obj::class as KClass<T>)
     }
 
     fun <T : Any> load(obj: T): T? {
@@ -109,6 +84,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
             }
             channel.close()
             res.close()
+            session.activateOnCurrentThread()
             session.close()
         }
         return channel
@@ -121,89 +97,235 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
         session.close()
     }
 
-    private fun internalCreateSchema(session: ODatabaseSession, clazz: KClass<*>?) {
+    private fun internalCreateSchema(session: ODatabaseSession, clazz: KClass<*>?): OClass? {
         val name = clazz?.simpleName
-        if (!stack.containsKey(name ?: "") && loaders.containsKey(name)) {
+        if (!nameToDBClass.containsKey(name ?: "") && loaders.containsKey(name)) {
+            val schema = session.getMetadata().getSchema()
+            var myClass: OClass? = schema.getClass(name)
 
-            try {
-                session.getMetadata().getSchema().dropClass(name ?: "");
-            } catch (e: OSchemaException) {
-            }
-            val myClass = session.createClass(name ?: "")
-            stack.set(name ?: "", myClass)
+            if(myClass == null) {
+                val superClasses = clazz?.superclasses?.map { superClazz ->
+                    internalCreateSchema(session, superClazz)
+                }?.filterNotNull()?.map { it?.name }?.toTypedArray()
 
-            clazz?.memberProperties?.forEach { property ->
-                if (isSimpleProperty(property)) {
-                    createReflectedProperty(property, myClass)
-                } else if (isObjectProperty(property)) {
-                    val objectClass = property.returnType.jvmErasure
-                    if (!loaders.containsKey(objectClass.simpleName)) {
-                        myClass.createProperty(property.name, OType.EMBEDDED)
-
-                    } else {
-                        internalCreateSchema(session, objectClass)
-                        myClass.createProperty(property.name, OType.LINK, stack.get(objectClass.simpleName))
-
-                    }
-                } else if (isCollectionType(property)) {
-                    if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
-                        createCollectionProperty(session, stack, OType.EMBEDDEDLIST, OType.LINKLIST, myClass, property)
-                    } else if (property.returnType.isSubtypeOf(Map::class.starProjectedType)) {
-                        createCollectionProperty(session, stack, OType.EMBEDDEDMAP, OType.LINKMAP, myClass, property)
-                    } else if (property.returnType.isSubtypeOf(Set::class.starProjectedType)) {
-                        createCollectionProperty(session, stack, OType.EMBEDDEDSET, OType.LINKSET, myClass, property)
-                    }
-
+                if (superClasses != null && superClasses.size > 0) {
+                    myClass = session.createClass(name ?: "", *superClasses)
+                } else {
+                    myClass = session.createClass(name ?: "")
                 }
             }
+            if(myClass!=null) nameToDBClass.set(name ?: "", myClass)
+            nameToKotlinClass.set(name ?: "", clazz as KClass<Any>)
+
+
+            clazz.memberProperties
+                    .filter { property -> myClass?.properties()?.find { it.name == property.name } == null }
+                    .forEach { property ->
+                        if (isSimpleProperty(property)) {
+                            createReflectedProperty(property, myClass)
+                        } else if (isObjectProperty(property)) {
+                            val objectClass = property.returnType.jvmErasure
+                            if (!loaders.containsKey(objectClass.simpleName)) {
+                                myClass?.createProperty(property.name, OType.EMBEDDED)
+                                nameToKotlinClass.set(objectClass.simpleName ?: "", objectClass as KClass<Any>)
+                            } else {
+                                internalCreateSchema(session, objectClass)
+                                myClass?.createProperty(property.name, OType.LINK, nameToDBClass.get(objectClass.simpleName))
+
+                            }
+                        } else if (isCollectionType(property)) {
+                            if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
+                                createCollectionProperty(session, nameToDBClass, OType.EMBEDDEDLIST, OType.LINKLIST, myClass, property)
+                            } else if (property.returnType.isSubtypeOf(Map::class.starProjectedType)) {
+                                createCollectionProperty(session, nameToDBClass, OType.EMBEDDEDMAP, OType.LINKMAP, myClass, property)
+                            } else if (property.returnType.isSubtypeOf(Set::class.starProjectedType)) {
+                                createCollectionProperty(session, nameToDBClass, OType.EMBEDDEDSET, OType.LINKSET, myClass, property)
+                            }
+
+                        }
+                    }
 
         }
+        return nameToDBClass.get(name)
     }
 
-    @ImplicitReflectionSerializer
+
+    private fun <T : Any> internalToObject(data: OElement?, clazz: KClass<T>, session: ODatabaseSession, loadedStack: MutableMap<OIdentifiable, Any?>): T? {
+        if (data == null) return null
+        val values = mutableMapOf<String, Any?>()
+
+        //loop prevention
+        var instance = clazz.createInstance()
+        loadedStack.put(data.identity,instance)
+        data.propertyNames.map { propertyName ->
+            Pair(propertyName, data.getProperty<Any>(propertyName))
+        }.forEach { (name, property) ->
+            values.put(name, internalLoadProperty(session, property, loadedStack))
+        }
+
+        /*
+        //TODO: more sophisticated solution here? i.e. check for "best machting" constructor, or try to set fields if writable
+        val constructor = clazz.constructors.first()
+        val params = constructor.parameters.associateBy({ it }, { values.get(it.name) })
+        val myInstance = constructor.callBy(params)
+
+         */
+        val copy = instance::class.memberFunctions.first { it.name == "copy" }
+        val params = copy.parameters.associateBy({ it }, {
+            if(copy.instanceParameter ==it) {
+               instance
+            }  else {
+                values.get(it.name)
+            }
+        })
+        instance = copy.callBy(params) as T
+        loadedStack.put(data.identity, instance)
+
+        return instance
+
+
+    }
+
+    private fun internalLoadProperty(session: ODatabaseSession, dbProperty: Any?, loadedStack: MutableMap<OIdentifiable, Any?>): Any? {
+        var result: Any? = null
+
+        when (dbProperty) {
+            is Set<*> -> {
+                result = dbProperty.map { oneProperty -> internalLoadProperty(session, oneProperty, loadedStack) }.toSet()
+            }
+            is List<*> -> {
+                result = dbProperty.map { oneProperty -> internalLoadProperty(session, oneProperty, loadedStack) }.toList()
+            }
+            is Map<*, *> -> {
+                result = dbProperty.entries.associate { property ->
+                    property.key to internalLoadProperty(session, property.value, loadedStack)
+                }
+            }
+            is OIdentifiable -> {
+
+                if (loadedStack.containsKey(dbProperty)) {
+                    result = loadedStack.get(dbProperty)
+                } else {
+                    if (dbProperty is ODocument && dbProperty.isEmbedded) {
+                        result = internalToObject(dbProperty, nameToKotlinClass.get(dbProperty.className)!!, session, loadedStack)
+
+                    } else {
+                        session.activateOnCurrentThread()
+
+                        val res = session.query("SELECT FROM ${dbProperty.identity}").next().toElement() as ODocument
+                        result = internalToObject(res,
+                                nameToKotlinClass.get(res.className)!!, session, loadedStack)
+
+                    }
+                }
+                //if(loaders.containsKey(memberProperty.returnType.classifier.))
+            }
+            else -> {
+                result = dbProperty
+
+            }
+        }
+        return result
+    }
+
     fun <T : Any> toObject(data: OResult?, obj: KClass<T>): T? {
-        if (data == null) return null
-        val serializer: KSerializer<out T> = obj.serializer()
-        val dataRecord = Json.nonstrict.parse(serializer, data?.getProperty(JSON_PROPERTY_NAME) ?: "")
-        return dataRecord
+        val session = orient.open(dbName, user, password)
+        try {
+            return internalToObject(data?.toElement(), obj, session, mutableMapOf())
+        } finally {
+            session.close()
+        }
+
     }
 
-    @ImplicitReflectionSerializer
     fun <T : Any> toObject(data: ODocument?, obj: KClass<T>): T? {
-        if (data == null) return null
-        val serializer: KSerializer<out T> = obj.serializer()
-        val dataRecord = Json.nonstrict.parse(serializer, data?.getProperty(JSON_PROPERTY_NAME) ?: "")
-        return dataRecord
+        val session = orient.open(dbName, user, password)
+        try {
+            return internalToObject(data, obj, session, mutableMapOf())
+        } finally {
+            session.close()
+        }
     }
 
     //////////////////private/////////////////////////77
 
-    private fun <T : Any> createDocument(session: ODatabaseSession, obj: T): ODocument? {
+    private fun <T : Any> createDocument(session: ODatabaseSession, obj: T, save:Boolean = false, rootIds: MutableSet<ORID>): ODocument? {
         val loader = loaders.get(obj::class.simpleName)
-        val record: ODocument
+        session.begin()
+        var mySave = save
+        var record: ODocument
         if (loader == null) {
             record = session.newInstance<ODocument>(obj::class.simpleName)
         } else {
-            record = loader(session, obj) ?: session.newInstance<ODocument>(obj::class.simpleName)
+            val loaderResult = loader(session, obj)
+            println("loader result id:${loaderResult?.identity}/v:${loaderResult?.version} for ${obj}: ")
+            if(loaderResult != null) {
+                record = loaderResult
+                //this record will be saved later
+                if(rootIds.contains(record.identity)) {
+                    mySave = false
+                }
+                rootIds.add(record.identity)
+            } else {
+                record =  session.newInstance<ODocument>(obj::class.simpleName)
+            }
         }
         obj::class.declaredMemberProperties.forEach { property ->
-            handleProperty(session, record, property, obj)
+            handleProperty(session, record, property, obj, rootIds)
         }
-        record.setProperty(JSON_PROPERTY_NAME, Json.stringify(obj::class.serializer() as KSerializer<T>, obj))
+        if(mySave)  {
+            session.activateOnCurrentThread()
+            record = session.save(record)
+            session.commit()
+            println("Saved  id:${record?.identity}/v:${record?.version} for ${obj}: ")
+        }
         return record
     }
 
-    private fun <T : Any> handleProperty(session: ODatabaseSession, record: ODocument, property: KProperty1<out Any, Any?>, obj: T) {
+    private fun <T : Any> saveDocument(obj: T, session: ODatabaseSession? = null, rootIds: MutableSet<ORID>): ODocument? {
+        val mySession: ODatabaseSession
+        var close = false
+        if (session == null) {
+            mySession = orient.open(dbName, user, password)
+            close = true
+        } else {
+            mySession = session
+        }
+        var record:ODocument? = null
+
+        for(i in 0..5) {
+            try {
+                mySession.activateOnCurrentThread()
+                record = createDocument(mySession, obj,true, rootIds )
+                break
+            } catch (e: Exception) {
+                when(e) {
+                    is ONeedRetryException, is OConcurrentModificationException -> {
+                        println("Got exception to retry for $record: $e")
+                        Thread.sleep(50)
+                    }
+                    else -> throw e
+                }
+            }
+        }
+        if (close) {
+            mySession.activateOnCurrentThread()
+            mySession.close()
+        }
+        return record
+    }
+
+    private fun <T : Any> handleProperty(session: ODatabaseSession, record: ODocument, property: KProperty1<out Any, Any?>, obj: T, rootIds: MutableSet<ORID>) {
         val readProperty = readProperty<Any>(obj, property.name)
         val readPropertyClass = readProperty::class
         if (isSimpleProperty(property)) {
             record.setProperty(property.name, readProperty)
         } else if (isObjectProperty(property)) {
             if (!loaders.containsKey(readPropertyClass.simpleName)) {
-                val objRecord = createDocument(session, readProperty)
+                val objRecord = createDocument(session, readProperty, rootIds = rootIds)
                 record.setProperty(property.name, objRecord)
             } else {
-                val objRecord = saveDocument(readProperty)
+                val objRecord = saveDocument(readProperty, rootIds = rootIds)
                 record.setProperty(property.name, objRecord?.identity)
 
             }
@@ -217,27 +339,27 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                     if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
                         val values = readProperty<List<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { createDocument(session, it!!) }
+                                .map { createDocument(session, it!!, rootIds = rootIds) }
                         record.setProperty(property.name, values)
 
                     } else {
                         val values = readProperty<Set<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { createDocument(session, it!!) }.toSet()
+                                .map { createDocument(session, it!!, rootIds = rootIds) }.toSet()
                         record.setProperty(property.name, values)
                     }
                 } else {
                     if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
                         val values = readProperty<List<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { saveDocument(it!!) }
+                                .map { saveDocument(it!!, rootIds = rootIds) }
                                 .map { it?.identity }
                         record.setProperty(property.name, values)
 
                     } else {
                         val values = readProperty<Set<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { saveDocument(it!!) }
+                                .map { saveDocument(it!!, rootIds = rootIds) }
                                 .map { it?.identity }.toSet()
                         record.setProperty(property.name, values)
                     }
@@ -248,13 +370,13 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                     record.setProperty(property.name, readProperty)
                 } else if (!loaders.containsKey(collectionClass?.simpleName)) {
                     val values = readProperty<Map<String, *>>(obj, property.name)
-                            .map { Pair("${it.key}", createDocument(session, it.value!!)) }
+                            .map { Pair(it.key, createDocument(session, it.value!!, rootIds = rootIds)) }
                             .toMap()
                     record.setProperty(property.name, values)
                 } else {
                     val values = readProperty<Map<*, *>>(obj, property.name)
                             .filter { it.value != null }
-                            .map { Pair("${it.key}", saveDocument(it.value!!)?.identity) }
+                            .map { Pair("${it.key}", saveDocument(it.value!!, rootIds = rootIds)?.identity) }
                             .toMap()
                     record.setProperty(property.name, values)
                 }
@@ -278,6 +400,8 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
         } else {
             listClass = property.returnType.arguments.first().type?.jvmErasure
         }
+
+        nameToKotlinClass.set(listClass?.simpleName ?: "", listClass as KClass<Any>)
 
         if (!loaders.containsKey(listClass?.simpleName)) {
             myClass?.createProperty(property.name, simpleType, stack.get(listClass?.simpleName))
@@ -332,5 +456,6 @@ fun <R : Any?> readProperty(instance: Any, propertyName: String): R {
     @Suppress("UNCHECKED_CAST")
     return clazz.declaredMemberProperties.first { it.name == propertyName }.get(instance) as R
 }
+
 
 

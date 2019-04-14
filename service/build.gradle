@@ -1,5 +1,5 @@
 dependencies {
-    compile project(':pipeline-kafka')
+    compile project(':pipeline-orientdb')
     compile 'io.javalin:javalin:1.6.1'
     compile 'org.slf4j:slf4j-simple:1.7.25'
 }

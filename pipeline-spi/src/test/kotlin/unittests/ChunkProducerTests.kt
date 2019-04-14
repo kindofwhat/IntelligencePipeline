@@ -39,8 +39,8 @@ class ChunkProducerTests {
 
         val chunks = runBlocking {  producer.produce(dataRecord)}
 
-        chunks.forEach { println(it) }
-        assert(chunks.toList().size>0)
+        chunks?.forEach { println(it) }
+        assert(chunks != null && chunks.toList().size>0)
     }
 
 

@@ -38,7 +38,7 @@ class MetadataProducerTests {
 //                representation = DocumentRepresentation("$pathIn/../Speech and Language Processing.pdf"))
         val docrep= runBlocking { docrepProd.produce(dataRecord)}
         println(docrep)
-        assert(docrep.createdBy == docrepProd.name)
+        assert(docrep?.createdBy == docrepProd.name)
     }
     @Test
     fun testTikaMetadataProducer() {
@@ -48,7 +48,7 @@ class MetadataProducerTests {
 //                representation = DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
         val metadata = runBlocking { handler.produce(dataRecord) }
         println(metadata)
-        assert(metadata.values.size>0)
+        assert(metadata!= null && metadata.values.size>0)
     }
 
     @Test
@@ -59,7 +59,7 @@ class MetadataProducerTests {
 //                representation = DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
         val metadata =  runBlocking { handler.produce(dataRecord) }
         println(metadata)
-        assert(metadata.values.size>0)
+        assert(metadata!= null && metadata.values.size>0)
     }
 
     @Ignore
@@ -71,7 +71,7 @@ class MetadataProducerTests {
                 representation = datatypes.DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
         val metadata =  runBlocking { handler.produce(dataRecord) }
         println(metadata)
-        assert(metadata.values.size>0)
+        assert(metadata!= null && metadata.values.size>0)
     }
 
     /**
@@ -86,7 +86,7 @@ class MetadataProducerTests {
                 //representation = datatypes.DocumentRepresentation("$pathIn/Speech and Language Processing.pdf"))
         val metadata =  runBlocking { handler.produce(dataRecord) }
         println(metadata)
-        assert(metadata.values.size>0)
+        assert(metadata!= null && metadata.values.size>0)
     }
 
 }

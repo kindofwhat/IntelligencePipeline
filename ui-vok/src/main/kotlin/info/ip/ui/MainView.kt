@@ -37,7 +37,7 @@ import kotlin.coroutines.CoroutineContext
 
 
 sealed class PipelineMessage
-class PipelineCreateMessage(val url: String, val state: String, val scanDir: String) : PipelineMessage()
+class PipelineCreateMessage(val connection: String, val dbName: String, val user: String, val password: String, val scanDirectory:String): PipelineMessage()
 class PipelineStartMessage : PipelineMessage()
 class PipelineStopMessage : PipelineMessage()
 
@@ -86,8 +86,8 @@ class MainView : VerticalLayout(), CoroutineScope {
                     is PipelineCreateMessage -> {
                         val job = async {
                             val pipeline: IIntelligencePipeline
-                            pipeline = createPipeline(msg.url, msg.state,
-                                    listOf(DirectoryIngestor(msg.scanDir)))
+                            pipeline = createPipeline(msg.connection, msg.dbName, msg.user,msg.password,
+                                    listOf(DirectoryIngestor(msg.scanDirectory)))
                             pipeline.registerSideEffect("ui") { key, value ->
                                     dataRecordChannel.sendBlocking(value)
                             }
@@ -122,18 +122,24 @@ class MainView : VerticalLayout(), CoroutineScope {
                 val page = verticalLayout {
 
                     content { align(left, evenly) }
-                    val url = textField("Kafka Host URL") {
-                        value = "localhost:29092"
+                    val connection = textField("Connection URL") {
+                        value = "remote:"
                     }
-                    val state = textField("State Directory") {
-                        value = "/tmp"
+                    val dbName = textField("DB Name") {
+                        value = "ip"
+                    }
+                    val user = textField("User") {
+                        value = "user"
+                    }
+                    val password = passwordField("Password") {
+                        value = ""
                     }
                     val scan = textField("Scan Directory") {
                         value = "/tmp"
                     }
                     button("Start Pipeline!").onLeftClick { event ->
                         async {
-                            actionChannel.send(PipelineCreateMessage(url.value, state.value, scan.value))
+                            actionChannel.send(PipelineCreateMessage(connection.value, dbName.value, user.value, password.value, scan.value))
                             actionChannel.send(PipelineStartMessage())
                         }
                     }
@@ -152,7 +158,6 @@ class MainView : VerticalLayout(), CoroutineScope {
 
                         val items = mutableSetOf<DataRecord>()
                         addColumn(DataRecord::name).setHeader("Name")
-                        addColumn(DataRecord::meta).setHeader("Meta")
                         async {
                             dataRecordChannel.consumeEach { dataRecord ->
                                 try {

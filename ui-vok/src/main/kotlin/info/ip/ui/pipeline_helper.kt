@@ -1,15 +1,15 @@
 import kotlinx.serialization.ImplicitReflectionSerializer
+import orientdb.OrientDBPipeline
 import participants.*
 import participants.file.*
 import pipeline.IIntelligencePipeline
-import pipeline.impl.KafkaIntelligencePipeline
 
 
 @ImplicitReflectionSerializer
-fun createPipeline(hostUrl:String, stateDir:String,
+fun createPipeline(connection: String, dbName: String, user: String, password: String,
                    ingestors: List<PipelineIngestor> = emptyList(),
                    producers:List<MetadataProducer> = emptyList()): IIntelligencePipeline {
-    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "testPipeline1")
+    val pipeline = OrientDBPipeline(connection, dbName,user, password)
     //val pipeline = ChannelIntelligencePipeline()
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }

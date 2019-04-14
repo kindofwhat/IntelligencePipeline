@@ -1,5 +1,4 @@
 import datatypes.DocumentRepresentation
-import commands.StartPipeline
 import io.javalin.Javalin
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.consumeEach
@@ -12,11 +11,14 @@ import kotlinx.serialization.parse
 import kotlinx.serialization.stringify
 import participants.*
 import participants.file.*
-import pipeline.impl.KafkaIntelligencePipeline
+import orientdb.OrientDBPipeline
+import pipeline.IIntelligencePipeline
 
 @ImplicitReflectionSerializer
-var pipeline: KafkaIntelligencePipeline? = null //= KafkaIntelligencePipeline()
+var pipeline: IIntelligencePipeline? = null //= KafkaIntelligencePipeline()
 
+
+data class StartPipeline(val connection: String, val dbName: String, val user: String, val password: String, val scanDirectory:String)
 @ImplicitReflectionSerializer
 fun main(args: Array<String>) {
 
@@ -51,7 +53,7 @@ fun stopPipeline() {
 @ObsoleteCoroutinesApi
 @ImplicitReflectionSerializer
 fun startPipeline(command: StartPipeline, app: Javalin) {
-    pipeline = createPipeline("testPipeline", command.bootstrap, command.stateDirectory,
+    pipeline = createPipeline(command.connection,command.dbName,command.user,command.password,
             listOf(DirectoryIngestor(command.scanDirectory)), emptyList(), app)
     pipeline?.run()
 
@@ -81,8 +83,8 @@ fun createWesocketClient(app:Javalin): Javalin? {
 
 
 @ImplicitReflectionSerializer
-fun createPipeline(pipelineName: String, hostUrl: String, stateDir: String, ingestors: List<PipelineIngestor>, producers: List<MetadataProducer>, app: Javalin): KafkaIntelligencePipeline {
-    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, pipelineName)
+fun createPipeline(connection: String, dbName: String, user: String, password: String, ingestors: List<PipelineIngestor>, producers: List<MetadataProducer>, app: Javalin): IIntelligencePipeline {
+    val pipeline = OrientDBPipeline(connection, dbName,user, password)
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
     pipeline.registry.register(FileOriginalContentCapability())

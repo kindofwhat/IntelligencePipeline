@@ -272,7 +272,7 @@ class KafkaIntelligencePipelineTests {
         dataRecordStream.join(chunkStream, { dataRecord, chunk -> Pair(dataRecord, chunk) },
                 JoinWindows.of(1000),
                 Joined.with(Serdes.LongSerde(), KotlinSerde(DataRecord::class.java), KotlinSerde(Chunk::class.java)))
-                .foreach({ key, value -> println("joined  $key/${value.second.parentId}/${value.second.index}") })
+                .foreach({ key, value -> println("joined  $key/${value.second.parent.name}/${value.second.index}") })
 
 
         val streams = KafkaStreams(builder.build(), myStreamConfig)

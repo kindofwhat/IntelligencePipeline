@@ -34,6 +34,18 @@ import pipeline.serialize.KotlinSerde
 import pipeline.serialize.serialize
 import util.log
 import java.util.*
+
+
+enum class BaseCommand { CREATE, UPDATE, UPSERT, DELETE }
+
+enum class DataRecordCommand {
+    CREATE, UPSERT, DELETE, UPSERT_METADATA, DELETE_METADATA, UPSERT_DOCUMENT_REPRESENTATION,
+    DELETE_DOCUMENT12_REPRESENTATION
+}
+
+object EmptyMetadataContainer:MetadataContainer
+
+
 @Serializable
 data class DataRecordWithChunks(val dataRecord: DataRecord= DataRecord(), val chunks: Set<Chunk> = mutableSetOf())
 
@@ -41,7 +53,7 @@ interface Event<C,P>
 @Serializable
 data class DataRecordEvent(val command: DataRecordCommand = DataRecordCommand.UPSERT, val record: DataRecord = DataRecord(), val timestamp: Long = 0L): Event<BaseCommand, DataRecord>
 @Serializable
-data class MetadataEvent(val command: BaseCommand = BaseCommand.UPSERT, val record: Metadata = Metadata()): Event<BaseCommand, Metadata>
+data class MetadataEvent(val command: BaseCommand = BaseCommand.UPSERT, val record: datatypes.Metadata = datatypes.Metadata(createdBy = "", values = emptyMap(), container = EmptyMetadataContainer)): Event<BaseCommand, Metadata>
 @Serializable
 data class DocumentRepresentationEvent(val command: BaseCommand = BaseCommand.UPSERT, val record: DocumentRepresentation = DocumentRepresentation()): Event<BaseCommand, DocumentRepresentation>
 
@@ -120,7 +132,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                         Consumed.with(Serdes.LongSerde(),
                                 KotlinSerde(datatypes.Chunk::class.java)))
                         .mapValues { value ->
-                            MetadataEvent(datatypes.BaseCommand.UPSERT,
+                            MetadataEvent(BaseCommand.UPSERT,
                                     runBlocking { producer.produce(value)})
                         }
                         .to(METADATA_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(MetadataEvent::class.java)))
@@ -246,7 +258,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
 
                     println("startTime: $startTime/messageTime: ${value.timestamp}")
 
-                    MetadataEvent(datatypes.BaseCommand.UPSERT, runBlocking { prod.produce(value)})
+                    MetadataEvent(BaseCommand.UPSERT, runBlocking { prod.produce(value)})
                 }.filter { _, value ->
                     //TODO: filter out the those that are exactly the same as before!
                     value.record.values.isNotEmpty()
@@ -338,7 +350,7 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
 
         //TODO: get the timestamp from the ingestion topic
         ingestionStream.mapValues { documentRepresentation ->
-            DataRecordEvent(datatypes.DataRecordCommand.CREATE, datatypes.DataRecord(representation = documentRepresentation, name = documentRepresentation.path),
+            DataRecordEvent(DataRecordCommand.CREATE, datatypes.DataRecord(representation = documentRepresentation, name = documentRepresentation.path),
                     timestamp = System.currentTimeMillis())
         }.to(DATARECORD_EVENT_TOPIC, Produced.with(Serdes.LongSerde(), KotlinSerde(DataRecordEvent::class.java)))
 
@@ -348,8 +360,8 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                         KotlinSerde(DocumentRepresentationEvent::class.java)))
 
         documentRepresentationEventStream.mapValues { value ->
-            if (value.command == datatypes.BaseCommand.UPSERT) {
-                DataRecordEvent(datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION, datatypes.DataRecord(additionalRepresentations = setOf(value.record)))
+            if (value.command == BaseCommand.UPSERT) {
+                DataRecordEvent(DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION, datatypes.DataRecord(additionalRepresentations = setOf(value.record)))
             } else {
                 throw Exception("Don't know how to handle $value")
             }
@@ -361,8 +373,8 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                         KotlinSerde(MetadataEvent::class.java)))
 
         metadataEventStream.mapValues { value ->
-            if (value.command == datatypes.BaseCommand.UPSERT) {
-                DataRecordEvent(datatypes.DataRecordCommand.UPSERT_METADATA, datatypes.DataRecord(meta = setOf(value.record)))
+            if (value.command == BaseCommand.UPSERT) {
+                DataRecordEvent(DataRecordCommand.UPSERT_METADATA, datatypes.DataRecord(meta = setOf(value.record)))
             } else {
                 throw Exception("Don't know how to handle $value")
             }
@@ -377,11 +389,11 @@ class KafkaIntelligencePipeline(kafkaBootstrap: String, stateDir: String, val ap
                 .aggregate(
                         { datatypes.DataRecord() },
                         { _, dataRecordEvent, dataRecord ->
-                            if (dataRecordEvent.command == datatypes.DataRecordCommand.CREATE) {
+                            if (dataRecordEvent.command == DataRecordCommand.CREATE) {
                                 dataRecord.copy(representation = dataRecordEvent.record.representation, name = dataRecordEvent.record.name, timestamp = dataRecordEvent.timestamp)
-                            } else if (dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_METADATA) {
+                            } else if (dataRecordEvent.command == DataRecordCommand.UPSERT_METADATA) {
                                 dataRecord.copy(meta = dataRecord.meta + dataRecordEvent.record.meta)
-                            } else if (dataRecordEvent.command == datatypes.DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION) {
+                            } else if (dataRecordEvent.command == DataRecordCommand.UPSERT_DOCUMENT_REPRESENTATION) {
                                 dataRecord.copy(additionalRepresentations = dataRecord.additionalRepresentations + dataRecordEvent.record.additionalRepresentations)
                             } else {
                                 throw Exception("Don't know how to handle $dataRecordEvent")

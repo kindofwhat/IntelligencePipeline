@@ -41,13 +41,13 @@ import kotlinx.serialization.stringify
 class HashMetadataProducer() : MetadataProducer {
     override val name = "hash"
 
-    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata {
+    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata? {
         val file = File(record.representation.path)
         if (file.isFile && file.canRead()) {
             val dig = DigestUtils.shaHex(file.inputStream())
-            return datatypes.Metadata(mapOf("digest" to dig), name)
+            return datatypes.Metadata(mapOf("digest" to dig), name, record)
         }
-        return datatypes.Metadata()
+        return null
     }
 }
 
@@ -63,7 +63,7 @@ class StanfordNlpSentenceChunkProducer(val lookup: CapabilityLookupStrategy):Chu
     }
     val pipeline = StanfordCoreNLP(props)
 
-    override suspend fun produce(record: datatypes.DataRecord): Sequence<datatypes.Chunk> {
+    override suspend fun produce(record: datatypes.DataRecord): Sequence<datatypes.Chunk>? {
         val text = lookup.lookup(simpleTextIn, record, String::class.java)
         //val text:String? = record.meta.firstOrNull { metadata -> metadata.createdBy == TikaMetadataProducer().name }?.values?.get("text")
         if (StringUtils.isNotEmpty(text)) {
@@ -76,12 +76,12 @@ class StanfordNlpSentenceChunkProducer(val lookup: CapabilityLookupStrategy):Chu
                 // these are all the sentences in this document
                 // a CoreMap is essentially a Map that uses class objects as keys and has values with custom types
                 val sentences = document.get(CoreAnnotations.SentencesAnnotation::class.java)
-                yield(datatypes.Chunk(type = "SENTENCE", command = "START", index = 0L, parentId = -1))
+                yield(datatypes.Chunk(type = "SENTENCE", command = "START", index = 0L, parent = record))
                 var idx:Long=0
                 for (sentence in sentences) {
-                    yield(datatypes.Chunk(type = "SENTENCE", content = sentence.toString(), index = idx++, parentId = -1))
+                    yield(datatypes.Chunk(type = "SENTENCE", content = sentence.toString(), index = idx++, parent = record))
                 }
-                yield(datatypes.Chunk(type = "SENTENCE", command ="LAST", index = 0L, parentId = -1))
+                yield(datatypes.Chunk(type = "SENTENCE", command ="LAST", index = 0L, parent = record))
             }
         }
         return emptySequence()
@@ -98,7 +98,7 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
     }
     val pipeline = StanfordCoreNLP(props)
 
-    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata {
+    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata? {
         // creates a StanfordCoreNLP object, with POS tagging, lemmatization, NER, parsing, and coreference resolution
         val metadata = mutableMapOf<String, String>()
         val text = lookup.lookup(simpleTextIn, record, String::class.java)
@@ -135,12 +135,12 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
                 if(dependencies != null)
                     metadata.put("dependencies_$i", dependencies.toCompactString(true))
             }
-            return datatypes.Metadata(values = metadata, createdBy = name)
+            return datatypes.Metadata(values = metadata, createdBy = name,container = record)
 
         }
         // create an empty Annotation just with the given text
 
-        return datatypes.Metadata()
+        return null
     }
 
 }
@@ -149,7 +149,7 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
 
 fun documentRepresenation(record: datatypes.DataRecord, textOutCapabilityName:String, textOutCapabilityPathName:String,
                           lookup:CapabilityLookupStrategy, name:String,
-                          contHandlerCreator: (outputStream: OutputStream) -> ContentHandler): datatypes.DocumentRepresentation {
+                          contHandlerCreator: (outputStream: OutputStream) -> ContentHandler): datatypes.DocumentRepresentation? {
     val parser = AutoDetectParser()
     var inputStream = lookup.lookup(originalContentIn, record, InputStream::class.java)
     var outputStream =  lookup.lookup(textOutCapabilityName, record, OutputStream::class.java)
@@ -166,12 +166,12 @@ fun documentRepresenation(record: datatypes.DataRecord, textOutCapabilityName:St
         }
         return datatypes.DocumentRepresentation(outPath, name)
     }
-    return datatypes.DocumentRepresentation()
+    return null
 }
 
 @RequiresCapabilities(originalContentIn,htmlTextOut, htmlTextOutPath)
 class TikaHtmlDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy, override val name:String = "tika-html"):DocumentRepresentationProducer {
-    suspend override fun produce(record: datatypes.DataRecord): datatypes.DocumentRepresentation {
+    suspend override fun produce(record: datatypes.DataRecord): datatypes.DocumentRepresentation? {
         return documentRepresenation(record, htmlTextOut, htmlTextOutPath,lookup,"tika-html"
         ) { out ->
             ToHTMLContentHandler(out,"utf-8")}
@@ -180,7 +180,7 @@ class TikaHtmlDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy
 
 @RequiresCapabilities(originalContentIn, simpleTextOut, simpleTextOutPath)
 class TikaTxtDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy, override val name:String = "tika-txt"):DocumentRepresentationProducer {
-    suspend override fun produce(record: datatypes.DataRecord): datatypes.DocumentRepresentation {
+    suspend override fun produce(record: datatypes.DataRecord): datatypes.DocumentRepresentation? {
         return documentRepresenation(record, simpleTextOut, simpleTextOutPath,lookup,"tika-txt"
         ) { out ->  ToTextContentHandler(out,"utf-8")}
     }
@@ -189,11 +189,11 @@ class TikaTxtDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy,
 @HasCapabilities(languageDetection)
 class TikaChunkLanguageDetection() :ChunkMetadataProducer {
     override val name: String="tika-lang-chunk"
-    suspend override fun produce(chunk: datatypes.Chunk): datatypes.Metadata {
+    suspend override fun produce(chunk: datatypes.Chunk): datatypes.Metadata? {
         if(StringUtils.isNotEmpty(chunk.content)) {
-            return datatypes.Metadata(values = mapOf(LanguageIdentifier(chunk.content).language to chunk.content), createdBy = name)
+            return datatypes.Metadata(values = mapOf(LanguageIdentifier(chunk.content).language to chunk.content), createdBy = name, container = chunk)
         }
-        return datatypes.Metadata()
+        return null
     }
 }
 
@@ -222,7 +222,7 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
 
 
     override fun  execute(name:String, dataRecord: datatypes.DataRecord): String? {
-        return dataRecord.meta.filter { it.createdBy == name }.firstOrNull()?.values?.get("lang")?:extractLang(dataRecord)?:""
+        return extractLang(dataRecord)?:""
     }
 
     private fun extractLang(record: datatypes.DataRecord): String? {
@@ -234,7 +234,7 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
     }
 
 
-    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata {
+    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata? {
         val parser = AutoDetectParser()
         val metadataPipeline = mutableMapOf<String, String>()
         val metadata = org.apache.tika.metadata.Metadata()
@@ -255,15 +255,15 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
         metadata.names().forEach { name ->
             metadataPipeline.put(name,metadata.get(name))
         }
-        if(metadataPipeline.size>0)  return datatypes.Metadata(metadataPipeline, name)
-        else return datatypes.Metadata()
+        if(metadataPipeline.size>0)  return datatypes.Metadata(metadataPipeline, name, record)
+        else return null
     }
 }
 
 @RequiresCapabilities(simpleTextIn, languageDetection)
 class GoogleNLPMetadataProducer(val lookup: CapabilityLookupStrategy):CapabilityLookupStrategyMetadataProducer<String>(lookup) {
     override val name = "google_nlp_metadata"
-    override suspend fun produce(record: DataRecord): Metadata {
+    override suspend fun produce(record: DataRecord): Metadata? {
         val entities = mutableMapOf<String,String>()
         val text:String? =lookup.lookup(simpleTextIn,record,String::class.java)
         if(StringUtils.isNotEmpty( text)) {
@@ -279,7 +279,7 @@ class GoogleNLPMetadataProducer(val lookup: CapabilityLookupStrategy):Capability
                 entities.put(entity.name,entity.type.name)
             }
         }
-        return Metadata(entities)
+        return Metadata(entities,name,record)
     }
 }
 
@@ -303,7 +303,7 @@ class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,
 
 
     @ImplicitReflectionSerializer
-    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata {
+    override suspend fun produce(record: datatypes.DataRecord): datatypes.Metadata? {
         val text:String? =lookup.lookup(simpleTextIn,record,String::class.java)
         if(StringUtils.isNotEmpty( text)) {
             var language = lookup.lookup(languageDetection,record,String::class.java)
@@ -324,10 +324,10 @@ class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,
             response.documents.first().keyPhrases.forEachIndexed { idx, keyPhrase ->
                 keyPhrases.put("keyPhrase_$idx" , keyPhrase )
             }
-            return datatypes.Metadata(keyPhrases, name)
+            return datatypes.Metadata(keyPhrases, name, record)
 
         }
-        return datatypes.Metadata()
+        return null
     }
 }
 
@@ -335,7 +335,8 @@ class DirectoryIngestor(val directory: String) : PipelineIngestor {
     val name = "directory"
     suspend override fun ingest(channel: SendChannel<datatypes.DocumentRepresentation>) {
         File(directory).walkTopDown().forEach {
-            channel.send(datatypes.DocumentRepresentation(it.absolutePath, this.name))
+            if(!it.isDirectory)
+                channel.send(datatypes.DocumentRepresentation(it.absolutePath, this.name))
         }
     }
 }

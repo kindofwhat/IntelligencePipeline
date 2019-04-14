@@ -5,10 +5,7 @@ import com.orientechnologies.orient.core.db.*
 import com.orientechnologies.orient.core.db.document.ODatabaseDocument
 import com.orientechnologies.orient.core.record.impl.ODocument
 import com.orientechnologies.orient.core.sql.executor.OResult
-import datatypes.Chunk
-import datatypes.DataRecord
-import datatypes.DocumentRepresentation
-import datatypes.Metadata
+import datatypes.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -30,6 +27,14 @@ class ChunkCreated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>)
 class ChunkUpdated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
 
 
+class NullLoader : Loader<Any> {
+    override fun invoke(session: ODatabaseSession, p2: Any): ODocument? {
+        return null
+    }
+
+}
+
+
 @ExperimentalCoroutinesApi
 @UseExperimental(ImplicitReflectionSerializer::class)
 class OrientDBPipeline(connection: String, val dbName: String, val user: String, val password: String) : ChannelIntelligencePipeline() {
@@ -46,11 +51,13 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         val loaders = mutableMapOf<String, Loader<Any>>()
         loaders.put(DataRecord::class.simpleName ?: "", FieldLoader("name"))
         loaders.put(DocumentRepresentation::class.simpleName ?: "", FieldLoader("path"))
-        //loaders.put(Metadata::class.simpleName?:"", FieldLoader("path"))
+        //loaders.put(Metadata::class.simpleName?:"", FieldLoader("path")
+        loaders.put(MetadataContainer::class.simpleName?:"", NullLoader(    ) )
         loaders.put(Chunk::class.simpleName ?: "") { session, c ->
             val chunk = c as Chunk
             var res: ODocument? = null
-            val result = session.query("SELECT FROM Chunk WHERE index = ${chunk.index}  and parentId = ${chunk.parentId} and type='${chunk.type}'")
+            val result = session.query("SELECT FROM Chunk WHERE index = ${chunk.index}  " +
+                    "and parent.name = '${chunk.parent.name}' and type='${chunk.type}'")
             if (result.hasNext()) {
                 val ores = result.next()
                 val existingDocument = ores.toElement() as ODocument
@@ -59,14 +66,40 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
             }
             res
         }
+        loaders.put(Metadata::class.simpleName ?: "") { session, m ->
+            val metadata = m as Metadata
+            var res: ODocument? = null
+            var query: String? = null
+            val container = metadata.container
+
+            when (container) {
+                is DataRecord -> query = "SELECT FROM Metadata WHERE createdBy = '${metadata.createdBy}'  " +
+                        "and container.name = '${container.name}'"
+                is Chunk -> query = "SELECT FROM Metadata WHERE createdBy = ${metadata.createdBy}  " +
+                        "and container.parent.name = '${container.parent.name}' " +
+                        "and container.type = '${container.type}' " +
+                        "and container.index = ${container.index}"
+            }
+            if (query != null) {
+                val result = session.query(query)
+                if (result.hasNext()) {
+                    val ores = result.next()
+                    val existingDocument = ores.toElement() as ODocument
+                    result.close()
+                    res = existingDocument
+                }
+            }
+
+            res
+        }
 
 
         korient = KOrient(connection, dbName, user, password, loaders)
-        if (!orient.exists(dbName)) {
-            orient.createIfNotExists(dbName, ODatabaseType.MEMORY)
-            korient.createSchema(DataRecord::class)
-            korient.createSchema(Chunk::class)
-        }
+        orient.createIfNotExists(dbName, ODatabaseType.MEMORY)
+        korient.createSchema(DataRecord::class)
+        korient.createSchema(Chunk::class)
+        korient.createSchema(Metadata::class)
+        korient.createSchema(DocumentRepresentation::class)
 
     }
 
@@ -111,28 +144,31 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
             for (command in commandChannel.openSubscription()) {
                 var dbRecord = korient.load(command.record)
                 if (dbRecord == null) {
-                    dbRecord = korient.saveObject(command.record)
+                    dbRecord = korient.save(command.record)
                 }
 
                 if (dbRecord != null) {
-                    var updatedRecord = dbRecord.copy()
+                    var updatedRecord: DataRecord = dbRecord.copy()
                     when (command) {
                         is MetadataUpdated -> {
-                            updatedRecord = updatedRecord.copy(meta = updatedRecord.meta + command.meta)
+                            val meta = korient.save(command.meta)
                         }
                         is AdditionalDocumentRepresentationsUpdated -> {
                             updatedRecord = updatedRecord.copy(additionalRepresentations = updatedRecord.additionalRepresentations + command.documentRepresentations)
                         }
                         is ChunkCreated -> {
-                            val savedChunk = korient.saveObject(command.chunk)
+                            val savedChunk = korient.save(command.chunk)
                             if (command.chunk != savedChunk && savedChunk != null) {
                                 commandChannel.send(ChunkUpdated(command.record, savedChunk, emptySet()))
                             }
                         }
                     }
                     if (!updatedRecord.equals(dbRecord)) {
-                        korient.saveObject(updatedRecord)
-                        commandChannel.send(DataRecordUpdated(updatedRecord, emptySet()))
+                        val savedRecord = korient.save(updatedRecord)
+                        if (savedRecord != null)
+                            commandChannel.send(DataRecordUpdated(updatedRecord, emptySet()))
+                        else
+                            println("something went wrong while persisting $updatedRecord")
                     }
                 }
             }
@@ -178,5 +214,6 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
 
 
 }
+
 
 
