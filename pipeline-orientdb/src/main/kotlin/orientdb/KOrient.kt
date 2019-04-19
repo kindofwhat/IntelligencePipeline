@@ -7,7 +7,6 @@ import com.orientechnologies.orient.core.db.OrientDB
 import com.orientechnologies.orient.core.db.OrientDBConfig
 import com.orientechnologies.orient.core.db.record.OIdentifiable
 import com.orientechnologies.orient.core.exception.OConcurrentModificationException
-import com.orientechnologies.orient.core.exception.OSchemaException
 import com.orientechnologies.orient.core.id.ORID
 import com.orientechnologies.orient.core.metadata.schema.OClass
 import com.orientechnologies.orient.core.metadata.schema.OType
@@ -22,6 +21,7 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.*
 import kotlin.reflect.jvm.jvmErasure
+import kotlin.reflect.jvm.jvmName
 
 typealias  Loader<T> = (session: ODatabaseSession, T) -> ODocument?
 
@@ -43,6 +43,7 @@ class FieldLoader(val fieldName: String) : Loader<Any> {
 
 class KOrient(connection: String, val dbName: String, val user: String, val password: String, var loaders: MutableMap<String, Loader<Any>> = mutableMapOf()) {
 
+    private val CLASS_HINT =  "__class_hint__"
     private val nameToDBClass: MutableMap<String, OClass> = mutableMapOf()
     private val nameToKotlinClass: MutableMap<String, KClass<Any>> = mutableMapOf()
 
@@ -61,7 +62,15 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
 
     fun <T : Any> save(obj: T?): T? {
         if (obj == null) return null
-        return toObject(saveDocument(obj, rootIds = mutableSetOf()), obj::class as KClass<T>)
+        val session = orient.open(dbName, user, password)
+        try {
+            return toObject(saveDocument(obj, rootIds = mutableSetOf(), session = session ,save=true), obj::class as KClass<T>)
+
+        } finally {
+            session.activateOnCurrentThread()
+            session.close()
+        }
+
     }
 
     fun <T : Any> load(obj: T): T? {
@@ -94,6 +103,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
         val session = orient.open(dbName, user, password)
         session.activateOnCurrentThread()
         internalCreateSchema(session, clazz)
+        session.commit()
         session.close()
     }
 
@@ -114,7 +124,11 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                     myClass = session.createClass(name ?: "")
                 }
             }
-            if(myClass!=null) nameToDBClass.set(name ?: "", myClass)
+            if(myClass!=null)  {
+                nameToDBClass.set(name ?: "", myClass)
+                if( myClass.properties().find { property -> property.name == CLASS_HINT } == null)
+                  myClass.createProperty(CLASS_HINT,OType.STRING)
+            }
             nameToKotlinClass.set(name ?: "", clazz as KClass<Any>)
 
 
@@ -207,11 +221,10 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                     result = loadedStack.get(dbProperty)
                 } else {
                     if (dbProperty is ODocument && dbProperty.isEmbedded) {
-                        result = internalToObject(dbProperty, nameToKotlinClass.get(dbProperty.className)!!, session, loadedStack)
+                        result = internalToObject(dbProperty, Class.forName(dbProperty.getProperty(CLASS_HINT)).kotlin, session, loadedStack)
 
                     } else {
                         session.activateOnCurrentThread()
-
                         val res = session.query("SELECT FROM ${dbProperty.identity}").next().toElement() as ODocument
                         result = internalToObject(res,
                                 nameToKotlinClass.get(res.className)!!, session, loadedStack)
@@ -251,14 +264,15 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
 
     private fun <T : Any> createDocument(session: ODatabaseSession, obj: T, save:Boolean = false, rootIds: MutableSet<ORID>): ODocument? {
         val loader = loaders.get(obj::class.simpleName)
-        session.begin()
         var mySave = save
         var record: ODocument
         if (loader == null) {
-            record = session.newInstance<ODocument>(obj::class.simpleName)
+            record = session.newElement().getRecord()
         } else {
+            session.activateOnCurrentThread()
+            session.reload()
             val loaderResult = loader(session, obj)
-            println("loader result id:${loaderResult?.identity}/v:${loaderResult?.version} for ${obj}: ")
+            println("loader result id:${loaderResult?.identity}/v:${loaderResult?.version} for ${obj}: ${loaderResult}")
             if(loaderResult != null) {
                 record = loaderResult
                 //this record will be saved later
@@ -267,36 +281,35 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                 }
                 rootIds.add(record.identity)
             } else {
-                record =  session.newInstance<ODocument>(obj::class.simpleName)
+                session.activateOnCurrentThread()
+                session.begin()
+                record =  session.newInstance<ODocument>(obj::class.simpleName).save()
+                session.commit()
             }
         }
         obj::class.declaredMemberProperties.forEach { property ->
-            handleProperty(session, record, property, obj, rootIds)
+            handleProperty(session, record, property, obj, rootIds, save)
         }
+        record.setProperty(CLASS_HINT, obj::class.jvmName)
         if(mySave)  {
             session.activateOnCurrentThread()
+            session.begin()
             record = session.save(record)
+            session.activateOnCurrentThread()
             session.commit()
-            println("Saved  id:${record?.identity}/v:${record?.version} for ${obj}: ")
+            record.reload()
+            println("Saved  id:${record?.identity}/v:${record?.version} for ${obj}: $record")
         }
         return record
     }
 
-    private fun <T : Any> saveDocument(obj: T, session: ODatabaseSession? = null, rootIds: MutableSet<ORID>): ODocument? {
-        val mySession: ODatabaseSession
+    private fun <T : Any> saveDocument(obj: T, session: ODatabaseSession, rootIds: MutableSet<ORID>, save:Boolean = false): ODocument? {
         var close = false
-        if (session == null) {
-            mySession = orient.open(dbName, user, password)
-            close = true
-        } else {
-            mySession = session
-        }
         var record:ODocument? = null
 
         for(i in 0..5) {
             try {
-                mySession.activateOnCurrentThread()
-                record = createDocument(mySession, obj,true, rootIds )
+                record = createDocument(session, obj,save=save, rootIds = rootIds)
                 break
             } catch (e: Exception) {
                 when(e) {
@@ -308,24 +321,20 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                 }
             }
         }
-        if (close) {
-            mySession.activateOnCurrentThread()
-            mySession.close()
-        }
         return record
     }
 
-    private fun <T : Any> handleProperty(session: ODatabaseSession, record: ODocument, property: KProperty1<out Any, Any?>, obj: T, rootIds: MutableSet<ORID>) {
+    private fun <T : Any> handleProperty(session: ODatabaseSession, record: ODocument, property: KProperty1<out Any, Any?>, obj: T, rootIds: MutableSet<ORID>, save:Boolean=false) {
         val readProperty = readProperty<Any>(obj, property.name)
         val readPropertyClass = readProperty::class
         if (isSimpleProperty(property)) {
             record.setProperty(property.name, readProperty)
         } else if (isObjectProperty(property)) {
             if (!loaders.containsKey(readPropertyClass.simpleName)) {
-                val objRecord = createDocument(session, readProperty, rootIds = rootIds)
+                val objRecord = createDocument(session, readProperty, rootIds = rootIds, save = false)
                 record.setProperty(property.name, objRecord)
             } else {
-                val objRecord = saveDocument(readProperty, rootIds = rootIds)
+                val objRecord = saveDocument(readProperty, rootIds = rootIds, session = session, save=save)
                 record.setProperty(property.name, objRecord?.identity)
 
             }
@@ -339,27 +348,27 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                     if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
                         val values = readProperty<List<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { createDocument(session, it!!, rootIds = rootIds) }
+                                .map { createDocument(session, it!!, rootIds = rootIds, save = save) }
                         record.setProperty(property.name, values)
 
                     } else {
                         val values = readProperty<Set<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { createDocument(session, it!!, rootIds = rootIds) }.toSet()
+                                .map { createDocument(session, it!!, rootIds = rootIds, save = save) }.toSet()
                         record.setProperty(property.name, values)
                     }
                 } else {
                     if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
                         val values = readProperty<List<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { saveDocument(it!!, rootIds = rootIds) }
+                                .map { saveDocument(it!!, rootIds = rootIds, session = session, save = save) }
                                 .map { it?.identity }
                         record.setProperty(property.name, values)
 
                     } else {
                         val values = readProperty<Set<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { saveDocument(it!!, rootIds = rootIds) }
+                                .map { saveDocument(it!!, rootIds = rootIds, session = session, save = save) }
                                 .map { it?.identity }.toSet()
                         record.setProperty(property.name, values)
                     }
@@ -376,7 +385,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                 } else {
                     val values = readProperty<Map<*, *>>(obj, property.name)
                             .filter { it.value != null }
-                            .map { Pair("${it.key}", saveDocument(it.value!!, rootIds = rootIds)?.identity) }
+                            .map { Pair("${it.key}", saveDocument(it.value!!, rootIds = rootIds, session=session)?.identity) }
                             .toMap()
                     record.setProperty(property.name, values)
                 }

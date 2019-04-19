@@ -3,17 +3,12 @@ package integrationtests
 import com.orientechnologies.orient.core.db.OrientDB
 import com.orientechnologies.orient.core.db.OrientDBConfig
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.filter
-import kotlinx.coroutines.channels.take
-import kotlinx.coroutines.channels.toList
 import org.junit.Before
 import org.junit.Test
-import orientdb.KOrient
 import orientdb.OrientDBPipeline
 import participants.*
 import participants.file.*
 import java.io.File
-import java.lang.Thread.sleep
 
 class OrientDBPipelineTest {
 
@@ -59,6 +54,7 @@ class OrientDBPipelineTest {
         if(orient.exists(db)) {
             val session = orient.open(db, user, password)
             session.command("DELETE FROM DataRecord")
+            session.command("DELETE FROM Metadata")
             session.command("DELETE FROM DocumentRepresentation")
             session.command("DELETE FROM Chunk")
             session.commit()
@@ -94,7 +90,7 @@ class OrientDBPipelineTest {
                 var res = 0L
                 while (res < 3) {
                     val session = orient.open(db, user, password)
-                    res = session.query("SELECT FROM Metadata where createdBy = '${tikaMetadataProducer.name}'").stream().count()
+                    res = session.query("SELECT FROM Metadata where createdBy = '${nlpParserProducer.name}'").stream().count()
                     session.close()
                 }
 

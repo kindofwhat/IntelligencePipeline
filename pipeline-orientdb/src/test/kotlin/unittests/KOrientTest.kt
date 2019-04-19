@@ -1,5 +1,6 @@
 package unittests
 
+import com.orientechnologies.orient.core.db.ODatabaseSession
 import com.orientechnologies.orient.core.db.ODatabaseType
 import com.orientechnologies.orient.core.db.OrientDB
 import com.orientechnologies.orient.core.db.OrientDBConfig
@@ -23,44 +24,55 @@ data class B(val a: A = A(), val b: String = "", val c: List<Boolean> = emptyLis
 data class C(val a: A = A(), val b: B = B(), val m1: Map<String,B> = emptyMap(), val m2:Map<String, Int> = emptyMap(), val s: Set<B> = emptySet())
 data class D(val id:String = "", val c: C = C(), val cset: Set<C> = emptySet(), val cmap: Map<String, C> = emptyMap(), val clist: List<C> = emptyList())
 
-open class P(open val id:String, open val a:A)
-data class C1(override val id: String, override val a:A, val b:B):P(id,a)
-data class C2(override val id:String, override val a:A, val c:C):P(id,a)
-data class R(val id:String, val p:P)
+open class P(open val id:String="", open val a:A=A())
+data class C1(override val id: String="", override val a:A=A(), val b:B=B()):P(id,a)
+data class C2(override val id:String="", override val a:A=A(), val c:C=C()):P(id,a)
+data class R(val id:String="", val p:P=P())
 
 @ImplicitReflectionSerializer
 class KOrientTest {
+
+    private fun createDB(dbName: String, loaders: MutableMap<String, Loader<Any>> = mutableMapOf()): Pair<ODatabaseSession, KOrient> {
+        val url = "remote:localhost"
+        val user = "root"
+        val password = "root"
+        val db = OrientDB(url, user,password, OrientDBConfig.defaultConfig())
+
+        if(db.exists(dbName)) db.drop(dbName)
+        db.create(dbName, ODatabaseType.MEMORY)
+
+        return  Pair(db.open(dbName, user, password)!!,  KOrient(url, dbName,user, password,loaders))
+
+    }
+
     @Test
     fun testSchemaCreation() {
         val dbName = "testSchemaCreation"
 //        val db = OrientDB("memory", OrientDBConfig.defaultConfig())
-        val db = OrientDB("remote:localhost", "root", "root", OrientDBConfig.defaultConfig())
-
-        if(db.exists(dbName)) db.drop(dbName)
-        db.create(dbName, ODatabaseType.MEMORY)
         //don't have to create session for B since it is depending on A
         val loaders = mutableMapOf<String, Loader<Any>>()
         loaders.put("A", FieldLoader("a"))
         loaders.put("B", FieldLoader("b"))
         loaders.put("D", FieldLoader("id"))
-        val korient = KOrient("remote:localhost", dbName,"root", "root",loaders)
 
+
+
+        val (session, korient) = createDB(dbName, loaders )
         korient.createSchema(A::class)
         korient.createSchema(D::class)
-
-
-        val session = db.open(dbName, "admin", "admin")
+        session.activateOnCurrentThread()
+        session.reload()
         val schema = session.metadata.schema
         assertTrue(schema.existsClass("A"))
-        assertEquals(4, schema.getClass("A").properties().size)
+        assertEquals(5, schema.getClass("A").properties().size)
         assertTrue(schema.existsClass("B"))
-        assertEquals(3, schema.getClass("B").properties().size)
+        assertEquals(4, schema.getClass("B").properties().size)
 
 
         assertFalse(schema.existsClass("C"))
         assertTrue(schema.existsClass("D"))
         val cSchema = schema.getClass("D")
-        assertEquals(5, cSchema.properties().size)
+        assertEquals(6, cSchema.properties().size)
 
         assertEquals(OType.EMBEDDED,cSchema.propertiesMap().get("c")?.type)
         assertEquals(OType.EMBEDDEDSET,cSchema.propertiesMap().get("cset")?.type)
@@ -72,11 +84,7 @@ class KOrientTest {
     @Test
     fun testHierarchicalSchemaCreation() {
         val dbName = "testHierarchicalSchemaCreation"
-//        val db = OrientDB("memory", OrientDBConfig.defaultConfig())
-        val db = OrientDB("remote:localhost", "root", "root", OrientDBConfig.defaultConfig())
 
-        if(db.exists(dbName)) db.drop(dbName)
-        db.create(dbName, ODatabaseType.MEMORY)
         //don't have to create session for B since it is depending on A
         val loaders = mutableMapOf<String, Loader<Any>>()
         loaders.put("A", FieldLoader("a"))
@@ -85,21 +93,22 @@ class KOrientTest {
         loaders.put("P", FieldLoader("id"))
         loaders.put("C1", FieldLoader("id"))
         loaders.put("C2", FieldLoader("id"))
-        val korient = KOrient("remote:localhost", dbName,"root", "root",loaders)
 
+
+        val (session, korient) = createDB(dbName, loaders )
         korient.createSchema(A::class)
         korient.createSchema(B::class)
         korient.createSchema(C::class)
         korient.createSchema(C1::class)
         korient.createSchema(C2::class)
+        session.activateOnCurrentThread()
+        session.reload()
 
-
-        val session = db.open(dbName, "admin", "admin")
         val schema = session.metadata.schema
         assertTrue(schema.existsClass("A"))
-        assertEquals(4, schema.getClass("A").properties().size)
+        assertEquals(5, schema.getClass("A").properties().size)
         assertTrue(schema.existsClass("B"))
-        assertEquals(3, schema.getClass("B").properties().size)
+        assertEquals(4, schema.getClass("B").properties().size)
 
 
         assertTrue(schema.existsClass("C"))
@@ -112,7 +121,7 @@ class KOrientTest {
 
 
         val c1Schema = schema.getClass("C1")
-        assertEquals(3, c1Schema.properties().size)
+        assertEquals(4, c1Schema.properties().size)
 
         c1Schema.allSuperClasses.contains(schema.getClass("P"))
     }
@@ -121,11 +130,6 @@ class KOrientTest {
     @Test
     fun testHiearchicalReloading() {
         val dbName = "testHiearchicalReloading"
-//        val db = OrientDB("memory", OrientDBConfig.defaultConfig())
-        val db = OrientDB("remote:localhost", "root", "root", OrientDBConfig.defaultConfig())
-
-        if(db.exists(dbName)) db.drop(dbName)
-        db.create(dbName, ODatabaseType.MEMORY)
         //don't have to create session for B since it is depending on A
         val loaders = mutableMapOf<String, Loader<Any>>()
         loaders.put("P", FieldLoader("id"))
@@ -133,13 +137,13 @@ class KOrientTest {
         loaders.put("C2", FieldLoader("id"))
         loaders.put("R", FieldLoader("id"))
 
-        val korient = KOrient("remote:localhost", dbName,"root", "root",loaders)
+        val (session, korient) = createDB(dbName, loaders )
 
         korient.createSchema(C1::class)
         korient.createSchema(C2::class)
         korient.createSchema(R::class)
-
-        val session = db.open(dbName, "admin", "admin")
+        session.activateOnCurrentThread()
+        session.reload()
         val schema = session.metadata.schema
 
         assertTrue(schema.existsClass("P"))
@@ -157,9 +161,6 @@ class KOrientTest {
         val r2= R(id="r2", p = c2)
 
         with(korient) {
-            save(a)
-            save(b)
-            save(c)
             save(c1)
             save(c2)
             save(r1)
@@ -178,10 +179,6 @@ class KOrientTest {
 
     @Test fun testPersistAndReload() {
         val dbName = "testPersistAndReload"
-        val db = OrientDB("remote:localhost", "root", "root", OrientDBConfig.defaultConfig())
-
-        if(db.exists(dbName)) db.drop(dbName)
-        db.create(dbName, ODatabaseType.MEMORY)
 
         val loaders = mutableMapOf<String, Loader<Any>>()
 
@@ -202,7 +199,7 @@ class KOrientTest {
         }
 
 
-        val korient = KOrient("remote:localhost", dbName,"root", "root",loaders)
+        val (_, korient) = createDB(dbName, loaders )
         korient.createSchema(A::class)
         korient.createSchema(C::class)
 
@@ -236,17 +233,12 @@ class KOrientTest {
     @Test
      fun testPersistAndReloadWithInnerClasses() {
         val dbName = "testPersistAndReloadWithInnerClasses"
-        val db = OrientDB("remote:localhost", "root", "root", OrientDBConfig.defaultConfig())
-
-        if(db.exists(dbName)) db.drop(dbName)
-        db.create(dbName, ODatabaseType.MEMORY)
-
         val loaders = mutableMapOf<String, Loader<Any>>()
         loaders.put("A", FieldLoader("a"))
         loaders.put("B", FieldLoader("b"))
         loaders.put("D", FieldLoader("id"))
 
-        val korient = KOrient("remote:localhost", dbName,"root", "root",loaders)
+        val (_, korient) = createDB(dbName, loaders )
         korient.createSchema( A::class)
         korient.createSchema( B::class)
         korient.createSchema( C::class)
