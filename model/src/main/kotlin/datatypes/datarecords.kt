@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class Chunk(val type: String = "GENERAL", val command: String = "ADD",
-                 val index: Long = -1, val parent: DataRecord, val content: String = "",
+                 val index: Long = -1, val parent: DataRecord =DataRecord(), val content: String = "",
                  @Optional val meta: Set<Metadata> = mutableSetOf()) : MetadataContainer {
     override fun id(): String {
         return "${parent.id()}-$type-$command-$index"

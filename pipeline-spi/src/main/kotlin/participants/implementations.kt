@@ -36,6 +36,7 @@ import com.google.cloud.language.v1.LanguageServiceClient
 import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.parse
 import kotlinx.serialization.stringify
+import java.net.URI
 
 
 class HashMetadataProducer() : MetadataProducer {
@@ -147,7 +148,7 @@ class StanfordNlpParserProducer(val lookup: CapabilityLookupStrategy) : Capabili
 
 
 
-fun documentRepresenation(record: datatypes.DataRecord, textOutCapabilityName:String, textOutCapabilityPathName:String,
+fun documentRepresenation(record: DataRecord, textOutCapabilityName:String, textOutCapabilityPathName:String,
                           lookup:CapabilityLookupStrategy, name:String,
                           contHandlerCreator: (outputStream: OutputStream) -> ContentHandler): datatypes.DocumentRepresentation? {
     val parser = AutoDetectParser()
@@ -189,7 +190,7 @@ class TikaTxtDocumentRepresentationProducer(val lookup:CapabilityLookupStrategy,
 @HasCapabilities(languageDetection)
 class TikaChunkLanguageDetection() :ChunkMetadataProducer {
     override val name: String="tika-lang-chunk"
-    suspend override fun produce(chunk: datatypes.Chunk): datatypes.Metadata? {
+    suspend override fun produce(chunk: datatypes.Chunk): Metadata? {
         if(StringUtils.isNotEmpty(chunk.content)) {
             return datatypes.Metadata(values = mapOf(LanguageIdentifier(chunk.content).language to chunk.content), createdBy = name, container = chunk)
         }
@@ -221,11 +222,11 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
     override val name = "tika-metadata"
 
 
-    override fun  execute(name:String, dataRecord: datatypes.DataRecord): String? {
+    override fun  execute(name:String, dataRecord: DataRecord): String? {
         return extractLang(dataRecord)?:""
     }
 
-    private fun extractLang(record: datatypes.DataRecord): String? {
+    private fun extractLang(record: DataRecord): String? {
         val text =  lookup.lookup(simpleTextIn, record, String::class.java)
         if(StringUtils.isNotEmpty(text)) {
             return LanguageIdentifier(text).language
@@ -245,7 +246,7 @@ class TikaMetadataProducer  (val lookup: CapabilityLookupStrategy) :
 
 
         //extract fulltext
-        if (inputStream != null && outputStream != null) {
+        if (inputStream != null) {
             inputStream.use { input ->
                 val contentHandler = DefaultHandler()
                 parser.parse(input, contentHandler, metadata)
@@ -331,12 +332,18 @@ class AzureCognitiveServicesMetadataProducer(val host:String, val apiKey:String,
     }
 }
 
-class DirectoryIngestor(val directory: String) : PipelineIngestor {
+class DirectoryIngestor(val directory: String, val whiteList:Set<String> = setOf(".pdf",".doc",".docx",".html",".txt",".xls",".xlsx")) : PipelineIngestor {
     val name = "directory"
     suspend override fun ingest(channel: SendChannel<datatypes.DocumentRepresentation>) {
         File(directory).walkTopDown().forEach {
-            if(!it.isDirectory)
-                channel.send(datatypes.DocumentRepresentation(it.absolutePath, this.name))
+            if(!it.isDirectory) {
+                if(it.name.contains(".")) {
+                    val ending = it.name.substring(it.name.indexOf("."))
+                    if(whiteList.contains(ending)) {
+                        channel.send(datatypes.DocumentRepresentation(URI(it.absolutePath).normalize().toString(), this.name))
+                    }
+                }
+            }
         }
     }
 }

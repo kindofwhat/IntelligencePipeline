@@ -30,6 +30,8 @@ class FieldLoader(val fieldName: String) : Loader<Any> {
     override fun invoke(session: ODatabaseSession, p2: Any): ODocument? {
         val className = p2::class.simpleName ?: ""
         val fieldValue = readProperty<Any>(p2, fieldName)
+        session.activateOnCurrentThread()
+        session.reload()
         val result = session.query("SELECT FROM ${className} WHERE ${fieldName} = '${fieldValue}' NOCACHE")
         if (result.hasNext()) {
             val res = result.next()
@@ -220,7 +222,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                 if (loadedStack.containsKey(dbProperty)) {
                     result = loadedStack.get(dbProperty)
                 } else {
-                    if (dbProperty is ODocument && dbProperty.isEmbedded) {
+                    if (dbProperty is ODocument && (dbProperty.isEmbedded || dbProperty.identity.isNew)) {
                         result = internalToObject(dbProperty, Class.forName(dbProperty.getProperty(CLASS_HINT)).kotlin, session, loadedStack)
 
                     } else {
@@ -348,13 +350,13 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                     if (property.returnType.isSubtypeOf(List::class.starProjectedType)) {
                         val values = readProperty<List<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { createDocument(session, it!!, rootIds = rootIds, save = save) }
+                                .map { createDocument(session, it!!, rootIds = rootIds, save = false) }
                         record.setProperty(property.name, values)
 
                     } else {
                         val values = readProperty<Set<*>>(obj, property.name)
                                 .filter { it != null }
-                                .map { createDocument(session, it!!, rootIds = rootIds, save = save) }.toSet()
+                                .map { createDocument(session, it!!, rootIds = rootIds, save = false) }.toSet()
                         record.setProperty(property.name, values)
                     }
                 } else {
@@ -379,13 +381,13 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                     record.setProperty(property.name, readProperty)
                 } else if (!loaders.containsKey(collectionClass?.simpleName)) {
                     val values = readProperty<Map<String, *>>(obj, property.name)
-                            .map { Pair(it.key, createDocument(session, it.value!!, rootIds = rootIds)) }
+                            .map { Pair(it.key, createDocument(session, it.value!!, rootIds = rootIds, save = false)) }
                             .toMap()
                     record.setProperty(property.name, values)
                 } else {
                     val values = readProperty<Map<*, *>>(obj, property.name)
                             .filter { it.value != null }
-                            .map { Pair("${it.key}", saveDocument(it.value!!, rootIds = rootIds, session=session)?.identity) }
+                            .map { Pair("${it.key}", saveDocument(it.value!!, rootIds = rootIds, session=session, save=save)?.identity) }
                             .toMap()
                     record.setProperty(property.name, values)
                 }

@@ -27,8 +27,8 @@ class DataRecordUpdated(record: DataRecord, handledBy: Set<String>) : Command<Da
 class AdditionalDocumentRepresentationsUpdated(record: DataRecord, val documentRepresentations: DocumentRepresentation, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
 class MetadataUpdated(record: DataRecord, val meta: Metadata, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
 
-class ChunkCreated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
 class ChunkUpdated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
+class ChunkMetadataUpdated(chunk: Chunk, val meta: Metadata, handledBy: Set<String>) : Command<Chunk>(chunk, handledBy)
 
 
 @ExperimentalCoroutinesApi
@@ -45,10 +45,12 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
     val ingestors = mutableListOf<PipelineIngestor>()
     val metadataProducers = mutableMapOf<UUID, MetadataProducer>()
     val chunkProducers = mutableMapOf<UUID, ChunkProducer>()
+    val chunkMetadataProducers = mutableMapOf<UUID, ChunkMetadataProducer>()
     val documentRepresentationProducers = mutableMapOf<UUID, DocumentRepresentationProducer>()
     val ingestionChannel = Channel<DocumentRepresentation>(Int.MAX_VALUE)
 
-    val commandChannel = BroadcastChannel<Command<DataRecord>>(10_000)
+    val dataRecordCommandChannel = BroadcastChannel<Command<DataRecord>>(10_000)
+    val chunkCommandChannel = BroadcastChannel<Command<Chunk>>(10_000)
 
 
 
@@ -71,7 +73,7 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
 
 
     override fun registerChunkMetadataProducer(producer: ChunkMetadataProducer) {
-        TODO("not implemented")
+        chunkMetadataProducers.put(UUID.randomUUID(), producer)
     }
 
     override fun registerChunkProducer(name: String, chunkProducer: ChunkProducer) {
@@ -81,7 +83,7 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
     override fun registerSideEffect(name: String, sideEffect: PipelineSideEffect) {
 
         launch {
-            for (command in commandChannel.openSubscription()) {
+            for (command in dataRecordCommandChannel.openSubscription()) {
                 sideEffect.invoke(-1, command.record)
             }
         }
@@ -102,19 +104,20 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
     override fun stop() {
         job.cancel()
         ingestionChannel.close()
-        commandChannel.close()
+        dataRecordCommandChannel.close()
+        chunkCommandChannel.close()
 
     }
 
     override fun run() {
         job = Job()
-        launchPerister()
+        launchIngestors()
         launchParticipants()
         launchPersister()
         launchDigestConsumers()
     }
 
-    private fun launchPerister() {
+    private fun launchIngestors() {
         launch {
             ingestors.forEach { ingestor ->
                 log("start ingestor ")
@@ -130,14 +133,14 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
             ingestionChannel.consumeEach { doc ->
 
                 val dataRecord = DataRecord(name = doc.path, representation = doc)
-                commandChannel.send(DataRecordUpdated(dataRecord, emptySet()))
+                dataRecordCommandChannel.send(DataRecordUpdated(dataRecord, emptySet()))
             }
         }
     }
 
     private fun launchParticipants() {
         launch {
-            for (command in commandChannel.openSubscription()) {
+            for (command in dataRecordCommandChannel.openSubscription()) {
                 val record = command.record
                 log(command.toString())
                 when (command) {
@@ -149,7 +152,7 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                             launch {
                                 val metadata = producer.produce(record)
                                 if(metadata != null)
-                                    commandChannel.send(MetadataUpdated(command.record, metadata, handledBy =  command.handledBy + uuid.toString()))
+                                    dataRecordCommandChannel.send(MetadataUpdated(command.record, metadata, handledBy =  command.handledBy + uuid.toString()))
 
                             }
                         }
@@ -159,7 +162,7 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                             launch {
                                 val docRep = producer.produce(record)
                                 if(docRep != null && !command.record.additionalRepresentations.contains(docRep))
-                                    commandChannel.send(AdditionalDocumentRepresentationsUpdated(command.record, docRep, handledBy = command.handledBy + uuid.toString()))
+                                    dataRecordCommandChannel.send(AdditionalDocumentRepresentationsUpdated(command.record, docRep, handledBy = command.handledBy + uuid.toString()))
 
                             }
                         }
@@ -169,10 +172,21 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                         }.map { (uuid, producer) ->
                             launch {
                                 producer.produce(command.record)?.forEach { chunk ->
-                                    commandChannel.send(ChunkCreated(command.record, chunk, handledBy = command.handledBy
+                                    dataRecordCommandChannel.send(ChunkUpdated(command.record, chunk, handledBy = command.handledBy
                                             + "${chunk.parent.name}-${chunk.index}-$uuid"))
                                 }
 
+                            }
+                        }
+                    }
+                    is ChunkUpdated -> {
+                        chunkMetadataProducers.filter {  (uuid, _) ->
+                            !command.handledBy.contains(uuid.toString())
+                        }.map  { (uuid, producer) ->
+                            launch {
+                                val metadata = producer.produce(command.chunk)
+                                if(metadata != null)
+                                    chunkCommandChannel.send(ChunkMetadataUpdated(command.chunk, metadata, handledBy =  command.handledBy + uuid.toString()))
                             }
                         }
                     }
@@ -181,7 +195,78 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
         }
     }
 
-    abstract fun launchPersister()
+    /*
+    override fun dataRecords(id: String): ReceiveChannel<DataRecord> {
+    val channel = Channel<DataRecord>()
+
+    val session = orient.open(dbName, user, password)
+    liveSubscriber(session, {record -> launch{channel.send(record)}})
+    return channel
+}
+*/
+    abstract fun loadDataRecord(value:DataRecord): DataRecord?
+    abstract fun saveDataRecord(value:DataRecord): DataRecord?
+
+    abstract fun loadMetadata(value:Metadata): Metadata?
+    abstract fun saveMetadata(value:Metadata): Metadata?
+
+    abstract fun loadChunk(value:Chunk): Chunk?
+    abstract fun saveChunk(value:Chunk): Chunk?
+
+
+
+    fun launchPersister() {
+        launch {
+            for (command in dataRecordCommandChannel.openSubscription()) {
+                var dbRecord = loadDataRecord(command.record)
+                if (dbRecord == null) {
+                    dbRecord = saveDataRecord(command.record)
+                }
+
+                if (dbRecord != null) {
+                    var updatedRecord: DataRecord = dbRecord.copy()
+                    when (command) {
+                        is MetadataUpdated -> {
+                            val meta = command.meta.copy(container = dbRecord)
+                            saveMetadata(meta)
+                        }
+                        is AdditionalDocumentRepresentationsUpdated -> {
+                            updatedRecord = updatedRecord.copy(additionalRepresentations = updatedRecord.additionalRepresentations + command.documentRepresentations)
+                        }
+                        is ChunkUpdated -> {
+                            val chunk = command.chunk.copy(parent = dbRecord)
+                           saveChunk(chunk)
+                        }
+                    }
+                    if (!updatedRecord.equals(dbRecord)) {
+                        val savedRecord = saveDataRecord(updatedRecord)
+                        if (savedRecord != null)
+                            dataRecordCommandChannel.send(DataRecordUpdated(updatedRecord, emptySet()))
+                        else
+                            println("something went wrong while persisting $updatedRecord")
+                    }
+                }
+            }
+        }
+        launch {
+            for (command in chunkCommandChannel.openSubscription()) {
+                var myChunk: Chunk? =loadChunk(command.record)
+                if (myChunk == null) {
+                    myChunk =saveChunk(command.record)
+                }
+                if (myChunk != null) {
+                    var updatedRecord: Chunk = myChunk.copy()
+                    when (command) {
+                        is ChunkMetadataUpdated -> {
+                            saveMetadata(command.meta)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
 
 
 }

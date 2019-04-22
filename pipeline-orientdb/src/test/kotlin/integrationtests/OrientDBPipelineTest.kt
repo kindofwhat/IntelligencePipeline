@@ -9,12 +9,13 @@ import orientdb.OrientDBPipeline
 import participants.*
 import participants.file.*
 import java.io.File
+import java.net.URI
 
 class OrientDBPipelineTest {
 
 
     companion object {
-        val baseDir = File(".").absolutePath
+        val baseDir =  URI(File(".").absolutePath).normalize().toString()
         val connection = "remote:localhost"
         val db = "ip"
         val user = "root"
@@ -27,7 +28,7 @@ class OrientDBPipelineTest {
 //            val pipeline = OrientDBPipeline("memory:", name, "admin", "admin")
             ingestors.forEach { pipeline.registerIngestor(it) }
             producers.forEach { pipeline.registerMetadataProducer(it) }
-            val testDir = "$baseDir/out/test"
+            val testDir = "${baseDir}out/test"
 
 
             pipeline.registry.register(FileOriginalContentCapability())
@@ -43,24 +44,46 @@ class OrientDBPipelineTest {
             pipeline.registerDocumentRepresentationProducer(TikaTxtDocumentRepresentationProducer(pipeline.registry))
             pipeline.registerDocumentRepresentationProducer(TikaHtmlDocumentRepresentationProducer(pipeline.registry))
 
-            //  pipeline.registerChunkProducer("sentenceProducer", StanfordNlpSentenceChunkProducer(pipeline.registry))
-
+            pipeline.registerChunkProducer("sentenceProducer", StanfordNlpSentenceChunkProducer(pipeline.registry))
+            pipeline.registerChunkMetadataProducer(TikaChunkLanguageDetection())
             return pipeline
         }
     }
 
     @Before
     fun clearTables() {
-        if(orient.exists(db)) {
+        if (orient.exists(db)) {
             val session = orient.open(db, user, password)
             session.command("DELETE FROM DataRecord")
             session.command("DELETE FROM Metadata")
-            session.command("DELETE FROM DocumentRepresentation")
+//            session.command("DELETE FROM DocumentRepresentation")
             session.command("DELETE FROM Chunk")
             session.commit()
         }
 
 
+    }
+
+    private fun queryTest(pipeline: OrientDBPipeline, query: String, expectedResults: Int, maxWait: Long = 10_000) {
+        runBlocking {
+            val job = GlobalScope.launch {
+                pipeline.run()
+            }
+            job.join()
+            // sleep(timeout)
+            withTimeout(maxWait) {
+                delay(2000)
+                var res = 0L
+                while (res < expectedResults) {
+                    val session = orient.open(db, user, password)
+                    res = session.query(query).stream().count()
+                    session.close()
+                }
+
+            }
+            pipeline.stop()
+            //            view = createDataRecords(storeName)
+        }
     }
 
 
@@ -70,7 +93,8 @@ class OrientDBPipelineTest {
         val name = "testStanfordNlpParser"
 
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("../pipeline-spi/src/test/resources/testresources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("${baseDir}pipeline-spi/src/test/resources/testresources")), emptyList<MetadataProducer>())
+//                listOf(DirectoryIngestor("/home/christian/Dokumente")), emptyList<MetadataProducer>())
 
         val nlpParserProducer = StanfordNlpParserProducer(pipeline.registry)
         val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)
@@ -78,28 +102,9 @@ class OrientDBPipelineTest {
         pipeline.registerMetadataProducer(tikaMetadataProducer)
 
 
-
-        runBlocking {
-            val job = GlobalScope.launch {
-                pipeline.run()
-            }
-            job.join()
-            // sleep(timeout)
-            withTimeout(10_000) {
-                delay(2000)
-                var res = 0L
-                while (res < 3) {
-                    val session = orient.open(db, user, password)
-                    res = session.query("SELECT FROM Metadata where createdBy = '${nlpParserProducer.name}'").stream().count()
-                    session.close()
-                }
-
-            }
-            pipeline.stop()
-//            view = createDataRecords(storeName)
-        }
-
-
+        queryTest(pipeline, "SELECT FROM Metadata where createdBy = '${nlpParserProducer.name}'",3)
+        queryTest(pipeline, "SELECT FROM Metadata where createdBy = '${tikaMetadataProducer.name}'",3)
     }
+
 
 }

@@ -21,8 +21,8 @@ import java.nio.file.Paths
 
 fun fileRepresentationStrategy(rootPath: String, dataRecord: datatypes.DataRecord, ending: String, createFileIfNotExisting:Boolean): File? {
 
-    val regex = Regex(":|\\\\|/")
-    val file = File(rootPath + "/" + regex.replace(dataRecord.representation.path,"-")+ "." + ending)
+//    val file = File(rootPath + "/" + regex.replace(dataRecord.representation.path,"-")+ "." + ending)
+    val file = File(rootPath + dataRecord.representation.path +"." + ending)
     if(!file.exists() && createFileIfNotExisting && !file.isDirectory) {
         Files.createDirectories(Paths.get(file.toURI()).parent)
         return file

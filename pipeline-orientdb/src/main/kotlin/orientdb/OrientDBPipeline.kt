@@ -14,18 +14,6 @@ import kotlinx.serialization.ImplicitReflectionSerializer
 import pipeline.capabilities.DefaultCapabilityRegistry
 import util.log
 
-typealias RecordConsumer = (DataRecord) -> Unit
-
-
-abstract class Command<T>(var record: T, var handledBy: Set<String>)
-class DataRecordUpdated(record: DataRecord, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
-
-class AdditionalDocumentRepresentationsUpdated(record: DataRecord, val documentRepresentations: DocumentRepresentation, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
-class MetadataUpdated(record: DataRecord, val meta: Metadata, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
-
-class ChunkCreated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
-class ChunkUpdated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
-
 
 class NullLoader : Loader<Any> {
     override fun invoke(session: ODatabaseSession, p2: Any): ODocument? {
@@ -50,12 +38,14 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         pool = ODatabasePool(orient, dbName, user, password)
         val loaders = mutableMapOf<String, Loader<Any>>()
         loaders.put(DataRecord::class.simpleName ?: "", FieldLoader("name"))
-        loaders.put(DocumentRepresentation::class.simpleName ?: "", FieldLoader("path"))
+        //loaders.put(DocumentRepresentation::class.simpleName ?: "", FieldLoader("path"))
         //loaders.put(Metadata::class.simpleName?:"", FieldLoader("path")
-        loaders.put(MetadataContainer::class.simpleName?:"", NullLoader(    ) )
+        loaders.put(MetadataContainer::class.simpleName ?: "", NullLoader())
         loaders.put(Chunk::class.simpleName ?: "") { session, c ->
             val chunk = c as Chunk
             var res: ODocument? = null
+            session.activateOnCurrentThread()
+            session.reload()
             val result = session.query("SELECT FROM Chunk WHERE index = ${chunk.index}  " +
                     "and parent.name = '${chunk.parent.name}' and type='${chunk.type}'")
             if (result.hasNext()) {
@@ -81,6 +71,8 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
                         "and container.index = ${container.index}"
             }
             if (query != null) {
+                session.activateOnCurrentThread()
+                session.reload()
                 val result = session.query(query)
                 if (result.hasNext()) {
                     val ores = result.next()
@@ -99,9 +91,34 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         korient.createSchema(DataRecord::class)
         korient.createSchema(Chunk::class)
         korient.createSchema(Metadata::class)
-        korient.createSchema(DocumentRepresentation::class)
 
     }
+
+
+    override fun loadDataRecord(value: DataRecord): DataRecord? {
+        return korient.load(value)
+    }
+
+    override fun saveDataRecord(value: DataRecord): DataRecord? {
+        return korient.save(value)
+    }
+
+    override fun loadMetadata(value: Metadata): Metadata? {
+        return korient.load(value)
+    }
+
+    override fun saveMetadata(value: Metadata): Metadata? {
+        return korient.save(value)
+    }
+
+    override fun loadChunk(value: Chunk): Chunk? {
+        return korient.save(value)
+    }
+
+    override fun saveChunk(value: Chunk): Chunk? {
+        return korient.save(value)
+    }
+
 
     /**
      * watch the pipeline "live"
@@ -130,51 +147,6 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         return channel
     }
 
-    /*
-        override fun dataRecords(id: String): ReceiveChannel<DataRecord> {
-        val channel = Channel<DataRecord>()
-
-        val session = orient.open(dbName, user, password)
-        liveSubscriber(session, {record -> launch{channel.send(record)}})
-        return channel
-    }
-    */
-    override fun launchPersister() {
-        launch {
-            for (command in commandChannel.openSubscription()) {
-                var dbRecord = korient.load(command.record)
-                if (dbRecord == null) {
-                    dbRecord = korient.save(command.record)
-                }
-
-                if (dbRecord != null) {
-                    var updatedRecord: DataRecord = dbRecord.copy()
-                    when (command) {
-                        is MetadataUpdated -> {
-                            val meta = korient.save(command.meta)
-                        }
-                        is AdditionalDocumentRepresentationsUpdated -> {
-                            updatedRecord = updatedRecord.copy(additionalRepresentations = updatedRecord.additionalRepresentations + command.documentRepresentations)
-                        }
-                        is ChunkCreated -> {
-                            val savedChunk = korient.save(command.chunk)
-                            if (command.chunk != savedChunk && savedChunk != null) {
-                                commandChannel.send(ChunkUpdated(command.record, savedChunk, emptySet()))
-                            }
-                        }
-                    }
-                    if (!updatedRecord.equals(dbRecord)) {
-                        val savedRecord = korient.save(updatedRecord)
-                        if (savedRecord != null)
-                            commandChannel.send(DataRecordUpdated(updatedRecord, emptySet()))
-                        else
-                            println("something went wrong while persisting $updatedRecord")
-                    }
-                }
-            }
-        }
-
-    }
 
 
     private class DataRecordsLiveQueryListener(val korient: KOrient,
