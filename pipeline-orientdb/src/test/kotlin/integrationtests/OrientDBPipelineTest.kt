@@ -1,5 +1,6 @@
 package integrationtests
 
+import com.orientechnologies.orient.core.db.ODatabasePool
 import com.orientechnologies.orient.core.db.OrientDB
 import com.orientechnologies.orient.core.db.OrientDBConfig
 import kotlinx.coroutines.*
@@ -15,7 +16,7 @@ class OrientDBPipelineTest {
 
 
     companion object {
-        val baseDir =  URI(File(".").absolutePath).normalize().toString()
+        val baseDir =  URI(File("..").absolutePath).normalize().toString()
         val connection = "remote:localhost"
         val db = "ip"
         val user = "root"
@@ -23,11 +24,13 @@ class OrientDBPipelineTest {
         val config = OrientDBConfig.defaultConfig()
         val orient = OrientDB(connection, user, password, config)
 
+
         fun createPipeline(name: String, ingestors: List<PipelineIngestor>, producers: List<MetadataProducer>): OrientDBPipeline {
             val pipeline = orientdb.OrientDBPipeline(connection, db, user, password)
 //            val pipeline = OrientDBPipeline("memory:", name, "admin", "admin")
             ingestors.forEach { pipeline.registerIngestor(it) }
             producers.forEach { pipeline.registerMetadataProducer(it) }
+            println("working in $baseDir")
             val testDir = "${baseDir}out/test"
 
 
@@ -64,26 +67,41 @@ class OrientDBPipelineTest {
 
     }
 
-    private fun queryTest(pipeline: OrientDBPipeline, query: String, expectedResults: Int, maxWait: Long = 10_000) {
+    private fun queryTest(pipeline: OrientDBPipeline, query: String, expectedResults: Int, maxWait: Long = 10_000_000) {
         runBlocking {
             val job = GlobalScope.launch {
                 pipeline.run()
             }
             job.join()
             // sleep(timeout)
+            val session = orient.open(db, user, password)
             withTimeout(maxWait) {
                 delay(2000)
                 var res = 0L
                 while (res < expectedResults) {
-                    val session = orient.open(db, user, password)
                     res = session.query(query).stream().count()
-                    session.close()
                 }
 
             }
+            session.close()
             pipeline.stop()
             //            view = createDataRecords(storeName)
         }
+    }
+
+
+    @Test
+    @Throws(Exception::class)
+    fun testStanfordNEExtractor() {
+        val name = "testStanfordNEExtractor"
+
+        val pipeline = createPipeline(name,
+                listOf(DirectoryIngestor("/home/christian/Dokumente")), emptyList<MetadataProducer>())
+
+        pipeline.registerChunkNamedEntityExtractor (StanfordNEExtractor())
+
+
+        queryTest(pipeline, "SELECT FROM Metadata where createdBy = 'blabla'",3)
     }
 
 
@@ -100,6 +118,7 @@ class OrientDBPipelineTest {
         val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)
         pipeline.registerMetadataProducer(nlpParserProducer)
         pipeline.registerMetadataProducer(tikaMetadataProducer)
+        pipeline.registerChunkNamedEntityExtractor (StanfordNEExtractor())
 
 
         queryTest(pipeline, "SELECT FROM Metadata where createdBy = '${nlpParserProducer.name}'",3)

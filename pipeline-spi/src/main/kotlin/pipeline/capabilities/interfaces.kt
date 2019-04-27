@@ -1,6 +1,6 @@
 package pipeline.capabilities
 
-
+const val namedEntityExtraction = "namedEntityExtraction"
 const val languageDetection = "languageDetection"
 
 const val originalContentIn = "originalContentIn"

@@ -33,10 +33,15 @@ import java.io.OutputStream
 import java.util.*
 import kotlinx.coroutines.*
 import com.google.cloud.language.v1.LanguageServiceClient
+import datatypes.Chunk
+import datatypes.NamedEntity
+import edu.stanford.nlp.pipeline.CoreDocument
 import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.parse
 import kotlinx.serialization.stringify
+import org.codehaus.jackson.map.util.Named
 import java.net.URI
+import javax.naming.Name
 
 
 class HashMetadataProducer() : MetadataProducer {
@@ -50,6 +55,36 @@ class HashMetadataProducer() : MetadataProducer {
         }
         return null
     }
+}
+
+
+@HasCapabilities(namedEntityExtraction)
+class StanfordNEExtractor():ChunkNamedEntityExtractor {
+    val props = Properties()
+    init {
+//        props.put("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
+        props.put("annotators", "tokenize, ssplit, pos, lemma, ner")
+    }
+    val pipeline = StanfordCoreNLP(props)
+
+    override fun invoke(value: Chunk): Sequence<NamedEntity> {
+        val text = value.content
+        //val text:String? = record.meta.firstOrNull { metadata -> metadata.createdBy == TikaMetadataProducer().name }?.values?.get("text")
+        if (StringUtils.isNotEmpty(text)) {
+            val document = CoreDocument(text)
+
+            // run all Annotators on this text
+            pipeline.annotate(document)
+
+            return sequence {
+                document.entityMentions().forEach { entity ->
+                    yield(NamedEntity(entity.entityType(), entity.text()))
+                }
+            }
+        }
+        return emptySequence()
+    }
+
 }
 
 
@@ -340,7 +375,11 @@ class DirectoryIngestor(val directory: String, val whiteList:Set<String> = setOf
                 if(it.name.contains(".")) {
                     val ending = it.name.substring(it.name.indexOf("."))
                     if(whiteList.contains(ending)) {
-                        channel.send(datatypes.DocumentRepresentation(URI(it.absolutePath).normalize().toString(), this.name))
+                        try {
+                            channel.send(datatypes.DocumentRepresentation(URI(it.absolutePath).normalize().toString(), this.name))
+                        } catch (e:Exception) {
+                          println(e)
+                        }
                     }
                 }
             }

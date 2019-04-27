@@ -2,6 +2,7 @@ package orientdb
 
 import com.orientechnologies.common.concur.ONeedRetryException
 import com.orientechnologies.orient.core.config.OGlobalConfiguration
+import com.orientechnologies.orient.core.db.ODatabasePool
 import com.orientechnologies.orient.core.db.ODatabaseSession
 import com.orientechnologies.orient.core.db.OrientDB
 import com.orientechnologies.orient.core.db.OrientDBConfig
@@ -32,7 +33,7 @@ class FieldLoader(val fieldName: String) : Loader<Any> {
         val fieldValue = readProperty<Any>(p2, fieldName)
         session.activateOnCurrentThread()
         session.reload()
-        val result = session.query("SELECT FROM ${className} WHERE ${fieldName} = '${fieldValue}' NOCACHE")
+        val result = session.query("SELECT FROM ${className} WHERE ${fieldName} = ? NOCACHE", fieldValue)
         if (result.hasNext()) {
             val res = result.next()
             val existingDocument = res.toElement() as ODocument
@@ -51,20 +52,22 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
 
 
     private val orient: OrientDB
-    //private val pool:ODatabasePool
+    private val pool: ODatabasePool
 
     init {
 
+        OGlobalConfiguration.LOG_CONSOLE_LEVEL.setValue("FINER")
+        OGlobalConfiguration.NETWORK_MAX_CONCURRENT_SESSIONS.setValue(3000)
         val config = OrientDBConfig.defaultConfig()
         orient = OrientDB(connection, user, password, config)
-        OGlobalConfiguration.LOG_CONSOLE_LEVEL.setValue("FINER")
-        //pool = ODatabasePool(orient, dbName, user, password)
+
+        pool = ODatabasePool(orient, dbName, user, password)
     }
 
 
     fun <T : Any> save(obj: T?): T? {
         if (obj == null) return null
-        val session = orient.open(dbName, user, password)
+        val session = pool.acquire()
         try {
             return toObject(saveDocument(obj, rootIds = mutableSetOf(), session = session ,save=true), obj::class as KClass<T>)
 
@@ -76,7 +79,14 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
     }
 
     fun <T : Any> load(obj: T): T? {
-        return toObject(this.loaders.get(obj::class.simpleName)?.invoke(orient.open(dbName, user, password), obj), obj::class as KClass<T>)
+        val session = pool.acquire()
+        try {
+            return toObject(this.loaders.get(obj::class.simpleName)?.invoke(session, obj), obj::class as KClass<T>)
+
+        } finally {
+            session.activateOnCurrentThread()
+            session.close()
+        }
     }
 
     fun <T : Any> queryAll(clazz: KClass<T>): ReceiveChannel<T> {
@@ -84,7 +94,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
 
         //todo: custom scope
         GlobalScope.launch {
-            val session = orient.open(dbName, user, password)
+            val session =  pool.acquire()
             session.activateOnCurrentThread()
             val res = session.query("SELECT FROM ${clazz.simpleName}")
             while (res.hasNext()) {
@@ -102,7 +112,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
     }
 
     fun createSchema(clazz: KClass<*>?) {
-        val session = orient.open(dbName, user, password)
+        val session = pool.acquire()
         session.activateOnCurrentThread()
         internalCreateSchema(session, clazz)
         session.commit()
@@ -244,7 +254,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
     }
 
     fun <T : Any> toObject(data: OResult?, obj: KClass<T>): T? {
-        val session = orient.open(dbName, user, password)
+        val session =  pool.acquire()
         try {
             return internalToObject(data?.toElement(), obj, session, mutableMapOf())
         } finally {
@@ -254,7 +264,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
     }
 
     fun <T : Any> toObject(data: ODocument?, obj: KClass<T>): T? {
-        val session = orient.open(dbName, user, password)
+        val session =  pool.acquire()
         try {
             return internalToObject(data, obj, session, mutableMapOf())
         } finally {
@@ -295,11 +305,11 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
         record.setProperty(CLASS_HINT, obj::class.jvmName)
         if(mySave)  {
             session.activateOnCurrentThread()
-            session.begin()
+//            session.begin()
             record = session.save(record)
-            session.activateOnCurrentThread()
-            session.commit()
-            record.reload()
+//            session.activateOnCurrentThread()
+//            session.commit()
+//            record.reload()
             println("Saved  id:${record?.identity}/v:${record?.version} for ${obj}: $record")
         }
         return record

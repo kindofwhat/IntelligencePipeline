@@ -1,9 +1,6 @@
 package orientdb
 
-import datatypes.Chunk
-import datatypes.DataRecord
-import datatypes.DocumentRepresentation
-import datatypes.Metadata
+import datatypes.*
 import facts.Proposer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
@@ -29,11 +26,12 @@ class MetadataUpdated(record: DataRecord, val meta: Metadata, handledBy: Set<Str
 
 class ChunkUpdated(record: DataRecord, val chunk: Chunk, handledBy: Set<String>) : Command<DataRecord>(record, handledBy)
 class ChunkMetadataUpdated(chunk: Chunk, val meta: Metadata, handledBy: Set<String>) : Command<Chunk>(chunk, handledBy)
+class ChunkNamedEntityExtracted(val chunk: Chunk, val ne: NamedEntity, handledBy: Set<String>) : Command<Chunk>(chunk, handledBy)
 
 
-@ExperimentalCoroutinesApi
-@UseExperimental(ImplicitReflectionSerializer::class)
+
 abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScope {
+
     lateinit var job: Job
     override val coroutineContext: CoroutineContext
         //get() = Dispatchers.Default + job
@@ -47,6 +45,10 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
     val chunkProducers = mutableMapOf<UUID, ChunkProducer>()
     val chunkMetadataProducers = mutableMapOf<UUID, ChunkMetadataProducer>()
     val documentRepresentationProducers = mutableMapOf<UUID, DocumentRepresentationProducer>()
+    val chunkNEExtractors = mutableMapOf<UUID, ChunkNamedEntityExtractor>()
+
+
+
     val ingestionChannel = Channel<DocumentRepresentation>(Int.MAX_VALUE)
 
     val dataRecordCommandChannel = BroadcastChannel<Command<DataRecord>>(10_000)
@@ -69,6 +71,10 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
      */
     override fun registerMetadataProducer(prod: MetadataProducer) {
         metadataProducers.put(UUID.randomUUID(), prod)
+    }
+
+    override fun registerChunkNamedEntityExtractor(extractor: ChunkNamedEntityExtractor) {
+        chunkNEExtractors.put(UUID.randomUUID(), extractor)
     }
 
 
@@ -189,6 +195,14 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                                     chunkCommandChannel.send(ChunkMetadataUpdated(command.chunk, metadata, handledBy =  command.handledBy + uuid.toString()))
                             }
                         }
+                        chunkNEExtractors.filter {  (uuid, _) ->
+                            !command.handledBy.contains(uuid.toString())
+                        }.map  { (uuid, extractor) ->
+                            launch {
+                                extractor.invoke(command.chunk).forEach { ne -> chunkCommandChannel.send(ChunkNamedEntityExtracted(command.chunk, ne, handledBy =  command.handledBy + uuid.toString()))}
+
+                            }
+                        }
                     }
                 }
             }
@@ -212,6 +226,8 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
 
     abstract fun loadChunk(value:Chunk): Chunk?
     abstract fun saveChunk(value:Chunk): Chunk?
+
+    abstract fun saveNamedEntity(chunk: Chunk, ne: NamedEntity): NamedEntityRelation?
 
 
 
@@ -260,12 +276,14 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                         is ChunkMetadataUpdated -> {
                             saveMetadata(command.meta)
                         }
+                        is ChunkNamedEntityExtracted -> {
+                            saveNamedEntity(command.chunk, command.ne)
+                        }
                     }
                 }
             }
         }
     }
-
 
 
 

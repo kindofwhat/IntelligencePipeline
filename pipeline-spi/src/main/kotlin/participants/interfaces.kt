@@ -2,6 +2,7 @@ package participants
 
 import datatypes.Chunk
 import datatypes.DataRecord
+import datatypes.NamedEntity
 import kotlinx.coroutines.channels.SendChannel
 import org.bouncycastle.asn1.cms.MetaData
 import pipeline.capabilities.CapabilityLookupStrategy
@@ -27,6 +28,7 @@ interface PipelineIngestor  {
 
 typealias PipelineSideEffect = (key:Long, value: datatypes.DataRecord) -> Unit
 
+typealias ChunkNamedEntityExtractor = (value: Chunk) -> Sequence<NamedEntity>
 
 /**
  * this would be an alternative: use functional types
