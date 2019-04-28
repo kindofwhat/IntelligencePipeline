@@ -10,7 +10,7 @@ class ChunkProducerTests {
     val registry= DefaultCapabilityRegistry()
 
     val pathIn = "src/test/resources/testresources"
-    val pathOut = "out"
+    val pathOut = "out/"
 
     init {
         registry.register(FileOriginalContentCapability())

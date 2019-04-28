@@ -1,9 +1,5 @@
 package unittests
 
-import com.orientechnologies.orient.core.db.ODatabaseSession
-import com.orientechnologies.orient.core.db.ODatabaseType
-import com.orientechnologies.orient.core.db.OrientDB
-import com.orientechnologies.orient.core.db.OrientDBConfig
 import com.orientechnologies.orient.core.metadata.schema.OType
 import com.orientechnologies.orient.core.record.impl.ODocument
 import junit.framework.Assert.*
@@ -12,11 +8,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.ImplicitReflectionSerializer
 import org.junit.Test
 import orientdb.FieldLoader
-import orientdb.Loader
 import orientdb.KOrient
-
-
-
+import orientdb.Loader
 
 
 data class A(val a: String = "", val b: List<B> = emptyList(), val c: Long = -1L, val d: List<String> = emptyList())
@@ -32,16 +25,12 @@ data class R(val id:String="", val p:P=P())
 @ImplicitReflectionSerializer
 class KOrientTest {
 
-    private fun createDB(dbName: String, loaders: MutableMap<String, Loader<Any>> = mutableMapOf()): Pair<ODatabaseSession, KOrient> {
-        val url = "remote:localhost"
-        val user = "root"
-        val password = "root"
-        val db = OrientDB(url, user,password, OrientDBConfig.defaultConfig())
+    private fun createDB(dbName: String, loaders: MutableMap<String, Loader<Any>> = mutableMapOf()):  KOrient{
+        val url = "memory:"
+        val user = "admin"
+        val password = "admin"
 
-        if(db.exists(dbName)) db.drop(dbName)
-        db.create(dbName, ODatabaseType.MEMORY)
-
-        return  Pair(db.open(dbName, user, password)!!,  KOrient(url, dbName,user, password,loaders))
+        return   KOrient(url, dbName,user, password,loaders)
 
     }
 
@@ -57,27 +46,28 @@ class KOrientTest {
 
 
 
-        val (session, korient) = createDB(dbName, loaders )
+        val korient = createDB(dbName, loaders )
         korient.createSchema(A::class)
         korient.createSchema(D::class)
-        session.activateOnCurrentThread()
-        session.reload()
-        val schema = session.metadata.schema
-        assertTrue(schema.existsClass("A"))
-        assertEquals(5, schema.getClass("A").properties().size)
-        assertTrue(schema.existsClass("B"))
-        assertEquals(4, schema.getClass("B").properties().size)
+
+        korient.withSession {session ->
+            val schema = session.metadata.schema
+            assertTrue(schema.existsClass("A"))
+            assertEquals(5, schema.getClass("A").properties().size)
+            assertTrue(schema.existsClass("B"))
+            assertEquals(4, schema.getClass("B").properties().size)
+            assertFalse(schema.existsClass("C"))
+            assertTrue(schema.existsClass("D"))
+            val cSchema = schema.getClass("D")
+            assertEquals(6, cSchema.properties().size)
+
+            assertEquals(OType.EMBEDDED,cSchema.propertiesMap().get("c")?.type)
+            assertEquals(OType.EMBEDDEDSET,cSchema.propertiesMap().get("cset")?.type)
+            assertEquals(OType.EMBEDDEDMAP,cSchema.propertiesMap().get("cmap")?.type)
+            assertEquals(OType.EMBEDDEDLIST,cSchema.propertiesMap().get("clist")?.type)
+        }
 
 
-        assertFalse(schema.existsClass("C"))
-        assertTrue(schema.existsClass("D"))
-        val cSchema = schema.getClass("D")
-        assertEquals(6, cSchema.properties().size)
-
-        assertEquals(OType.EMBEDDED,cSchema.propertiesMap().get("c")?.type)
-        assertEquals(OType.EMBEDDEDSET,cSchema.propertiesMap().get("cset")?.type)
-        assertEquals(OType.EMBEDDEDMAP,cSchema.propertiesMap().get("cmap")?.type)
-        assertEquals(OType.EMBEDDEDLIST,cSchema.propertiesMap().get("clist")?.type)
     }
 
 
@@ -95,35 +85,36 @@ class KOrientTest {
         loaders.put("C2", FieldLoader("id"))
 
 
-        val (session, korient) = createDB(dbName, loaders )
+        val korient = createDB(dbName, loaders )
         korient.createSchema(A::class)
         korient.createSchema(B::class)
         korient.createSchema(C::class)
         korient.createSchema(C1::class)
         korient.createSchema(C2::class)
-        session.activateOnCurrentThread()
-        session.reload()
-
-        val schema = session.metadata.schema
-        assertTrue(schema.existsClass("A"))
-        assertEquals(5, schema.getClass("A").properties().size)
-        assertTrue(schema.existsClass("B"))
-        assertEquals(4, schema.getClass("B").properties().size)
+        korient.withSession { session ->
+            val schema = session.metadata.schema
+            assertTrue(schema.existsClass("A"))
+            assertEquals(5, schema.getClass("A").properties().size)
+            assertTrue(schema.existsClass("B"))
+            assertEquals(4, schema.getClass("B").properties().size)
 
 
-        assertTrue(schema.existsClass("C"))
+            assertTrue(schema.existsClass("C"))
 
-        assertTrue(schema.existsClass("P"))
-        assertTrue(schema.existsClass("C1"))
-        assertTrue(schema.existsClass("C2"))
+            assertTrue(schema.existsClass("P"))
+            assertTrue(schema.existsClass("C1"))
+            assertTrue(schema.existsClass("C2"))
 
 
 
 
-        val c1Schema = schema.getClass("C1")
-        assertEquals(4, c1Schema.properties().size)
+            val c1Schema = schema.getClass("C1")
+            assertEquals(4, c1Schema.properties().size)
 
-        c1Schema.allSuperClasses.contains(schema.getClass("P"))
+            c1Schema.allSuperClasses.contains(schema.getClass("P"))
+
+        }
+
     }
 
 
@@ -137,19 +128,20 @@ class KOrientTest {
         loaders.put("C2", FieldLoader("id"))
         loaders.put("R", FieldLoader("id"))
 
-        val (session, korient) = createDB(dbName, loaders )
+        val korient = createDB(dbName, loaders )
 
         korient.createSchema(C1::class)
         korient.createSchema(C2::class)
         korient.createSchema(R::class)
-        session.activateOnCurrentThread()
-        session.reload()
-        val schema = session.metadata.schema
+        korient.withSession {session ->
+            val schema = session.metadata.schema
 
-        assertTrue(schema.existsClass("P"))
-        assertTrue(schema.existsClass("C1"))
-        assertTrue(schema.existsClass("C2"))
-        assertTrue(schema.existsClass("R"))
+            assertTrue(schema.existsClass("P"))
+            assertTrue(schema.existsClass("C1"))
+            assertTrue(schema.existsClass("C2"))
+            assertTrue(schema.existsClass("R"))
+
+        }
 
         val a = A(a="a")
         val b = B(b="b")
@@ -199,7 +191,7 @@ class KOrientTest {
         }
 
 
-        val (_, korient) = createDB(dbName, loaders )
+        val korient = createDB(dbName, loaders )
         korient.createSchema(A::class)
         korient.createSchema(C::class)
 
@@ -238,7 +230,7 @@ class KOrientTest {
         loaders.put("B", FieldLoader("b"))
         loaders.put("D", FieldLoader("id"))
 
-        val (_, korient) = createDB(dbName, loaders )
+        val korient = createDB(dbName, loaders )
         korient.createSchema( A::class)
         korient.createSchema( B::class)
         korient.createSchema( C::class)

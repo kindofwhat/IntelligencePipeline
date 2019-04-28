@@ -1,11 +1,9 @@
 package orientdb
 
 import com.orientechnologies.common.concur.ONeedRetryException
+import com.orientechnologies.orient.core.Orient
 import com.orientechnologies.orient.core.config.OGlobalConfiguration
-import com.orientechnologies.orient.core.db.ODatabasePool
-import com.orientechnologies.orient.core.db.ODatabaseSession
-import com.orientechnologies.orient.core.db.OrientDB
-import com.orientechnologies.orient.core.db.OrientDBConfig
+import com.orientechnologies.orient.core.db.*
 import com.orientechnologies.orient.core.db.record.OIdentifiable
 import com.orientechnologies.orient.core.exception.OConcurrentModificationException
 import com.orientechnologies.orient.core.id.ORID
@@ -44,26 +42,41 @@ class FieldLoader(val fieldName: String) : Loader<Any> {
     }
 }
 
-class KOrient(connection: String, val dbName: String, val user: String, val password: String, var loaders: MutableMap<String, Loader<Any>> = mutableMapOf()) {
+class KOrient(connection: String, dbName: String, user: String, password: String, var loaders: MutableMap<String, Loader<Any>> = mutableMapOf()) {
 
     private val CLASS_HINT =  "__class_hint__"
     private val nameToDBClass: MutableMap<String, OClass> = mutableMapOf()
     private val nameToKotlinClass: MutableMap<String, KClass<Any>> = mutableMapOf()
 
-
-    private val orient: OrientDB
     private val pool: ODatabasePool
 
     init {
-
-        OGlobalConfiguration.LOG_CONSOLE_LEVEL.setValue("FINER")
-        OGlobalConfiguration.NETWORK_MAX_CONCURRENT_SESSIONS.setValue(3000)
         val config = OrientDBConfig.defaultConfig()
-        orient = OrientDB(connection, user, password, config)
 
-        pool = ODatabasePool(orient, dbName, user, password)
+        if(connection.startsWith("memory:")) {
+            val orient = OrientDB(connection,config )
+            orient.createIfNotExists(connection, ODatabaseType.MEMORY)
+
+            pool = ODatabasePool(orient, connection, "admin", "admin")
+
+        } else {
+            val orient = OrientDB(connection, user,password, config)
+
+            pool = ODatabasePool(orient, dbName, user, password)
+        }
     }
 
+    fun withSession(action: (ODatabaseSession) -> Unit) {
+        val session = pool.acquire()
+        try {
+            session.activateOnCurrentThread()
+            action(session)
+        }finally {
+            session.activateOnCurrentThread()
+            session.close()
+        }
+
+    }
 
     fun <T : Any> save(obj: T?): T? {
         if (obj == null) return null
@@ -102,6 +115,7 @@ class KOrient(connection: String, val dbName: String, val user: String, val pass
                 if (maybeDataRecord != null) {
                     channel.send(maybeDataRecord)
                 }
+                session.activateOnCurrentThread()
             }
             channel.close()
             res.close()
