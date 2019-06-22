@@ -169,9 +169,8 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
     /**
      * watch the pipeline "live"
      */
-    private fun liveSubscriber(session: ODatabaseSession,
-                               consumer: RecordConsumer) {
-        session.live("LIVE SELECT FROM ${DataRecord::class.simpleName}", DataRecordsLiveQueryListener(korient, consumer))
+    fun liveSubscriber(consumer: RecordConsumer) {
+        pool.acquire().live("LIVE SELECT FROM ${DataRecord::class.simpleName}", DataRecordsLiveQueryListener(korient, consumer))
     }
 
 
@@ -183,7 +182,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         val res = session.query("SELECT FROM ${DataRecord::class.simpleName}")
 
         while (res.hasNext()) {
-            val maybeDataRecord = korient.toObject(res.next(), DataRecord::class)
+            val maybeDataRecord = korient.resultToObject(res.next(), DataRecord::class)
             if (maybeDataRecord != null) {
                 launch {
                     channel.send(maybeDataRecord)
@@ -206,7 +205,7 @@ class OrientDBPipeline(connection: String, val dbName: String, val user: String,
         }
 
         private fun handleDataRecord(data: OResult?) {
-            val dataRecord = korient.toObject(data, DataRecord::class)
+            val dataRecord = korient.resultToObject(data, DataRecord::class)
 
             if (dataRecord != null) {
                 consumer.invoke(dataRecord)

@@ -29,8 +29,7 @@ class ChunkMetadataUpdated(chunk: Chunk, val meta: Metadata, handledBy: Set<Stri
 class ChunkNamedEntityExtracted(val chunk: Chunk, val ne: NamedEntity, handledBy: Set<String>) : Command<Chunk>(chunk, handledBy)
 
 
-
-abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScope {
+abstract class ChannelIntelligencePipeline : IIntelligencePipeline, CoroutineScope {
 
     lateinit var job: Job
     override val coroutineContext: CoroutineContext
@@ -48,13 +47,10 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
     val chunkNEExtractors = mutableMapOf<UUID, ChunkNamedEntityExtractor>()
 
 
-
     val ingestionChannel = Channel<DocumentRepresentation>(Int.MAX_VALUE)
 
     val dataRecordCommandChannel = BroadcastChannel<Command<DataRecord>>(10_000)
     val chunkCommandChannel = BroadcastChannel<Command<Chunk>>(10_000)
-
-
 
 
     private fun idForDataRecord(dataRecord: DataRecord): Long {
@@ -156,9 +152,14 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                             !command.handledBy.contains(uuid.toString())
                         }.map { (uuid, producer) ->
                             launch {
-                                val metadata = producer.produce(record)
-                                if(metadata != null)
-                                    dataRecordCommandChannel.send(MetadataUpdated(command.record, metadata, handledBy =  command.handledBy + uuid.toString()))
+                                try {
+                                    val metadata = producer.produce(record)
+                                    if (metadata != null)
+                                        dataRecordCommandChannel.send(MetadataUpdated(command.record, metadata, handledBy = command.handledBy + uuid.toString()))
+
+                                } catch (e: Exception) {
+                                    //TODO: correct retry
+                                }
 
                             }
                         }
@@ -166,9 +167,13 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                             !command.handledBy.contains(uuid.toString())
                         }.map { (uuid, producer) ->
                             launch {
-                                val docRep = producer.produce(record)
-                                if(docRep != null && !command.record.additionalRepresentations.contains(docRep))
-                                    dataRecordCommandChannel.send(AdditionalDocumentRepresentationsUpdated(command.record, docRep, handledBy = command.handledBy + uuid.toString()))
+                                try {
+                                    val docRep = producer.produce(record)
+                                    if (docRep != null && !command.record.additionalRepresentations.contains(docRep))
+                                        dataRecordCommandChannel.send(AdditionalDocumentRepresentationsUpdated(command.record, docRep, handledBy = command.handledBy + uuid.toString()))
+                                } catch (e: Exception) {
+                                    //TODO: correct retry
+                                }
 
                             }
                         }
@@ -177,29 +182,43 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                             true
                         }.map { (uuid, producer) ->
                             launch {
-                                producer.produce(command.record)?.forEach { chunk ->
-                                    dataRecordCommandChannel.send(ChunkUpdated(command.record, chunk, handledBy = command.handledBy
-                                            + "${chunk.parent.name}-${chunk.index}-$uuid"))
+                                try {
+                                    producer.produce(command.record)?.forEach { chunk ->
+                                        dataRecordCommandChannel.send(ChunkUpdated(command.record, chunk, handledBy = command.handledBy
+                                                + "${chunk.parent.name}-${chunk.index}-$uuid"))
+                                    }
+                                } catch (e: Exception) {
+                                    //TODO: correct retry
                                 }
 
                             }
                         }
                     }
                     is ChunkUpdated -> {
-                        chunkMetadataProducers.filter {  (uuid, _) ->
+                        chunkMetadataProducers.filter { (uuid, _) ->
                             !command.handledBy.contains(uuid.toString())
-                        }.map  { (uuid, producer) ->
+                        }.map { (uuid, producer) ->
                             launch {
-                                val metadata = producer.produce(command.chunk)
-                                if(metadata != null)
-                                    chunkCommandChannel.send(ChunkMetadataUpdated(command.chunk, metadata, handledBy =  command.handledBy + uuid.toString()))
+                                try {
+
+                                    val metadata = producer.produce(command.chunk)
+                                    if (metadata != null)
+                                        chunkCommandChannel.send(ChunkMetadataUpdated(command.chunk, metadata, handledBy = command.handledBy + uuid.toString()))
+                                } catch (e: Exception) {
+                                    //TODO: correct retry
+                                }
                             }
                         }
-                        chunkNEExtractors.filter {  (uuid, _) ->
+                        chunkNEExtractors.filter { (uuid, _) ->
                             !command.handledBy.contains(uuid.toString())
-                        }.map  { (uuid, extractor) ->
+                        }.map { (uuid, extractor) ->
                             launch {
-                                extractor.invoke(command.chunk).forEach { ne -> chunkCommandChannel.send(ChunkNamedEntityExtracted(command.chunk, ne, handledBy =  command.handledBy + uuid.toString()))}
+                                try {
+
+                                    extractor.invoke(command.chunk).forEach { ne -> chunkCommandChannel.send(ChunkNamedEntityExtracted(command.chunk, ne, handledBy = command.handledBy + uuid.toString())) }
+                                } catch (e: Exception) {
+                                    //TODO: correct retry
+                                }
 
                             }
                         }
@@ -218,17 +237,17 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
     return channel
 }
 */
-    abstract fun loadDataRecord(value:DataRecord): DataRecord?
-    abstract fun saveDataRecord(value:DataRecord): DataRecord?
+    abstract fun loadDataRecord(value: DataRecord): DataRecord?
 
-    abstract fun loadMetadata(value:Metadata): Metadata?
-    abstract fun saveMetadata(value:Metadata): Metadata?
+    abstract fun saveDataRecord(value: DataRecord): DataRecord?
 
-    abstract fun loadChunk(value:Chunk): Chunk?
-    abstract fun saveChunk(value:Chunk): Chunk?
+    abstract fun loadMetadata(value: Metadata): Metadata?
+    abstract fun saveMetadata(value: Metadata): Metadata?
+
+    abstract fun loadChunk(value: Chunk): Chunk?
+    abstract fun saveChunk(value: Chunk): Chunk?
 
     abstract fun saveNamedEntity(chunk: Chunk, ne: NamedEntity): NamedEntityRelation?
-
 
 
     fun launchPersister() {
@@ -251,13 +270,13 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
                         }
                         is ChunkUpdated -> {
                             val chunk = command.chunk.copy(parent = dbRecord)
-                           saveChunk(chunk)
+                            saveChunk(chunk)
                         }
                     }
                     if (!updatedRecord.equals(dbRecord)) {
                         val savedRecord = saveDataRecord(updatedRecord)
                         if (savedRecord != null)
-                            dataRecordCommandChannel.send(DataRecordUpdated(updatedRecord, emptySet()))
+                            dataRecordCommandChannel.send(DataRecordUpdated(savedRecord, emptySet()))
                         else
                             println("something went wrong while persisting $updatedRecord")
                     }
@@ -266,9 +285,9 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
         }
         launch {
             for (command in chunkCommandChannel.openSubscription()) {
-                var myChunk: Chunk? =loadChunk(command.record)
+                var myChunk: Chunk? = loadChunk(command.record)
                 if (myChunk == null) {
-                    myChunk =saveChunk(command.record)
+                    myChunk = saveChunk(command.record)
                 }
                 if (myChunk != null) {
                     var updatedRecord: Chunk = myChunk.copy()
@@ -284,7 +303,6 @@ abstract class ChannelIntelligencePipeline: IIntelligencePipeline, CoroutineScop
             }
         }
     }
-
 
 
 }

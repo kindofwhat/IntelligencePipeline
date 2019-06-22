@@ -1,2 +1,2 @@
 rootProject.name = 'IntelligencePipeline'
-include 'model', 'service', 'pipeline-spi', 'pipeline-orientdb', 'ui-vok'
+include 'model', 'pipeline-spi', 'pipeline-sql'

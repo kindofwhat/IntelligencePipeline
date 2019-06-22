@@ -5,24 +5,21 @@ import io.kweb.dom.element.creation.ElementCreator
 import io.kweb.dom.element.creation.tags.*
 import io.kweb.dom.element.events.on
 import io.kweb.dom.element.new
+import io.kweb.plugins.fomanticUI.fomanticUIPlugin
 import io.kweb.plugins.foundation.foundation
-import io.kweb.plugins.semanticUI.semantic
-import io.kweb.plugins.foundation.grid.*
-import io.kweb.plugins.semanticUI.semanticUIPlugin
-import io.kweb.shoebox.Shoebox
-import io.kweb.state.KVal
+import io.kweb.plugins.foundation.grid.column
+import io.kweb.plugins.foundation.grid.row
+import io.kweb.plugins.fomanticUI.*
 import io.kweb.state.KVar
-import io.kweb.state.persistent.render
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.ImplicitReflectionSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.stringify
 import mu.KotlinLogging
+import orientdb.OrientDBPipeline
 import participants.DirectoryIngestor
 import pipeline.IIntelligencePipeline
-import java.util.*
 import kotlin.coroutines.CoroutineContext
 
 @ObsoleteCoroutinesApi
@@ -38,15 +35,15 @@ object PipelineUI : CoroutineScope {
 
     private val dataRecords = KVar(mutableListOf<DataRecord>())
 
-    var pipeline: IIntelligencePipeline? = null
+    var pipeline: OrientDBPipeline? = null
     fun main(args: Array<String>) {
         job = Job()
         logger.debug("Starting GUI")
-        Kweb(port = 9090, refreshPageOnHotswap = true, debug = true, plugins = listOf(semanticUIPlugin, foundation)) {
+        Kweb(port = 9090, refreshPageOnHotswap = true, debug = true, plugins = listOf(fomanticUIPlugin, foundation)) {
 
             doc.body.new {
                 val creator = this
-                div(semantic.ui.two.column.left.grid).new {
+                div(fomantic.ui.two.column.left.grid).new {
                     pipelineActions(creator)
                 }
             }
@@ -54,45 +51,52 @@ object PipelineUI : CoroutineScope {
     }
 
     private fun pipelineResults(elementCreator: ElementCreator<*>): Unit {
-        dataRecords.value.clear()
-        launch {
-            for (datarecord in pipeline?.dataRecords("ui${System.currentTimeMillis()}")!!) {
-                elementCreator.foundation.row().new {
-                    column().text(datarecord.name)
-                    div(mapOf("style" to "white-space:pre")).text(Json.indented.stringify(datarecord))
-                }
-                dataRecords.value.add(datarecord)
+        //dataRecords.value.clear()
+        pipeline?.liveSubscriber { datarecord ->
+            elementCreator.foundation.row().new {
+                column().text(datarecord.name)
+                div(mapOf("style" to "white-space:pre")).text(Json.indented.stringify(datarecord))
             }
+            //dataRecords.value.add(datarecord)
+
         }
     }
 
     private fun pipelineActions(creator: ElementCreator<*>): Element {
 
-        val container = creator.div(semantic.column).text("Pipeline")
+        val container = creator.div(fomantic.column).text("Pipeline")
 
         container.new() {
-            form(semantic.ui.form).new {
-                val bootstrap = input("Bootstrap", "localhost:29092", this)
-                val stateDir = input("StateDir", "/tmp", this)
-                val documentDir = input("DocumentDir", "/tmp/testresources", this)
+            form(fomantic.ui.form).new {
+                val docDir = input("Doc Dir", "/home/christian/Dokumente", this)
+                val outDir = input("Out dir", "/tmp/pipeline", this)
+                val connectionUrl = input("Connection Url", "remote:localhost", this)
+                val dbName = input("DB Name", "ip", this)
+                val user = input("user", "root", this)
+                val password = input("Password", "ip", this)
 
-                button(semantic.ui.button).text("Start").apply {
+                button(fomantic.ui.button).text("Start").apply {
                     on.click {
                         launch {
-                            pipeline = createPipeline(bootstrap?.getValue()?.await()
-                                    ?: "", stateDir?.getValue()?.await()
-                                    ?: "", listOf(DirectoryIngestor(documentDir?.getValue()?.await() ?: "")))
+                            pipeline = createPipeline(
+                                    docDir?.getValue()?.await()?: "",
+                                    outDir?.getValue()?.await()?: "",
+                                    connectionUrl?.getValue()?.await()?: "",
+                                    dbName?.getValue()?.await()?: "",
+                                    user?.getValue()?.await()?: "",
+                                    password?.getValue()?.await()
+                                    ?: "", listOf(DirectoryIngestor(docDir?.getValue()?.await() ?: "")))
                             pipeline?.run()
 
                         }
                     }
                 }
-                button(semantic.ui.button).text("Stop").apply {
+                button(fomantic.ui.button).text("Stop").apply {
                     on.click {
                         pipeline?.stop()
                     }
                 }
-                button(semantic.ui.button).text("Query").apply {
+                button(fomantic.ui.button).text("Query").apply {
                     on.click {
                         pipelineResults(creator)
                     }
@@ -105,7 +109,7 @@ object PipelineUI : CoroutineScope {
 
     private fun input(name: String, placeholder: String, elementCreator: ElementCreator<FormElement>): InputElement? {
         var result: InputElement? = null;
-        elementCreator.div(semantic.ui.field).new {
+        elementCreator.div(fomantic.ui.field).new {
             result = input(InputType.text, name.toLowerCase(), placeholder = placeholder, initialValue = placeholder)
             label(for_ = result).text(name.capitalize())
 

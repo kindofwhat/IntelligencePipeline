@@ -4,7 +4,7 @@ repositories {
 }
 
 dependencies {
-    compile project(':pipeline')
-    compile 'com.github.kwebio:core:0.3.14'
+    compile project(':pipeline-orientdb')
+    compile 'com.github.kwebio:core:0.4.11'
     compile 'org.slf4j:slf4j-simple:1.7.25' // <-- or your favorite SLF4J logger binding
 }

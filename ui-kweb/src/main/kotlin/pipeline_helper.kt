@@ -2,15 +2,15 @@ import kotlinx.serialization.ImplicitReflectionSerializer
 import participants.*
 import participants.file.*
 import pipeline.IIntelligencePipeline
-import pipeline.impl.KafkaIntelligencePipeline
+import orientdb.OrientDBPipeline
 import java.util.*
 
 
 @ImplicitReflectionSerializer
-fun createPipeline(hostUrl:String, stateDir:String,
+fun createPipeline(docDir:String,outDir:String, hostUrl:String, dbName:String, user:String, password:String,
                    ingestors: List<PipelineIngestor> = emptyList(),
-                   producers:List<MetadataProducer> = emptyList()): IIntelligencePipeline {
-    val pipeline = KafkaIntelligencePipeline(hostUrl, stateDir, "uiPipeline${System.currentTimeMillis()}")
+                   producers:List<MetadataProducer> = emptyList()): OrientDBPipeline {
+    val pipeline = OrientDBPipeline(hostUrl, dbName,  user, password)
     //val pipelineActions = MapIntelligencePipeline()
     ingestors.forEach { ingestor -> pipeline.registerIngestor(ingestor) }
     producers.forEach { producer -> pipeline.registerMetadataProducer(producer) }
@@ -18,19 +18,20 @@ fun createPipeline(hostUrl:String, stateDir:String,
 
     pipeline.registry.register(FileOriginalContentCapability())
 
-    pipeline.registry.register(FileTxtOutputProvider("$stateDir/out2"))
-    pipeline.registry.register(FileTxtStringProvider("$stateDir/out2"))
-    pipeline.registry.register(FileSimpleTextOutPathCapability("$stateDir/out2"))
+    pipeline.registry.register(FileTxtOutputProvider(outDir))
+    pipeline.registry.register(FileTxtStringProvider(outDir))
+    pipeline.registry.register(FileSimpleTextOutPathCapability(outDir))
 
-    pipeline.registry.register(FileHtmlOutputProvider("$stateDir/out2"))
-    pipeline.registry.register(FileHtmlStringProvider("$stateDir/out2"))
-    pipeline.registry.register(FileHtmlTextOutPathCapability("$stateDir/out2"))
+    pipeline.registry.register(FileHtmlOutputProvider(outDir))
+    pipeline.registry.register(FileHtmlStringProvider(outDir))
+    pipeline.registry.register(FileHtmlTextOutPathCapability(outDir))
 
     pipeline.registerDocumentRepresentationProducer(TikaTxtDocumentRepresentationProducer(pipeline.registry))
     pipeline.registerDocumentRepresentationProducer(TikaHtmlDocumentRepresentationProducer(pipeline.registry))
 
     pipeline.registerChunkProducer("sentenceProducer", StanfordNlpSentenceChunkProducer(pipeline.registry))
     pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
+    pipeline.registerChunkNamedEntityExtractor(StanfordNEExtractor())
 
 
     return pipeline

@@ -16,14 +16,20 @@ class OrientDBPipelineTest {
 
     companion object {
         val baseDir = URI(File(".").absolutePath).normalize().toString()
+/*
         val connection = "memory:"
         val db = "ip"
         val user = "admin"
         val password = "admin"
+*/
+        val connection = "remote:localhost"
+ //       val db = "ip"
+        val user = "root"
+        val password = "root"
 
 
         fun createPipeline(name: String, ingestors: List<PipelineIngestor>, producers: List<MetadataProducer>): OrientDBPipeline {
-            val pipeline = orientdb.OrientDBPipeline(connection, db, user, password)
+            val pipeline = orientdb.OrientDBPipeline(connection, name, user, password)
 //            val pipeline = OrientDBPipeline("memory:", name, "admin", "admin")
             ingestors.forEach { pipeline.registerIngestor(it) }
             producers.forEach { pipeline.registerMetadataProducer(it) }
@@ -45,6 +51,8 @@ class OrientDBPipelineTest {
             pipeline.registerDocumentRepresentationProducer(TikaHtmlDocumentRepresentationProducer(pipeline.registry))
 
             pipeline.registerChunkProducer("sentenceProducer", StanfordNlpSentenceChunkProducer(pipeline.registry))
+            pipeline.registerMetadataProducer(TikaMetadataProducer(pipeline.registry))
+
             pipeline.registerChunkMetadataProducer(TikaChunkLanguageDetection())
             return pipeline
         }
@@ -96,8 +104,8 @@ class OrientDBPipelineTest {
         val name = "testStanfordNlpParser"
 
         val pipeline = createPipeline(name,
-                listOf(DirectoryIngestor("${baseDir}pipeline-spi/src/test/resources/testresources")), emptyList<MetadataProducer>())
-//                listOf(DirectoryIngestor("/home/christian/Dokumente")), emptyList<MetadataProducer>())
+//                listOf(DirectoryIngestor("${baseDir}pipeline-spi/src/test/resources/testresources")), emptyList<MetadataProducer>())
+                listOf(DirectoryIngestor("/home/christian/Dokumente")), emptyList<MetadataProducer>())
 
         val nlpParserProducer = StanfordNlpParserProducer(pipeline.registry)
         val tikaMetadataProducer = TikaMetadataProducer(pipeline.registry)
@@ -106,8 +114,8 @@ class OrientDBPipelineTest {
         pipeline.registerChunkNamedEntityExtractor(StanfordNEExtractor())
 
 
-        queryTest(pipeline, "SELECT FROM Metadata where createdBy = '${nlpParserProducer.name}'", 3)
-        queryTest(pipeline, "SELECT FROM Metadata where createdBy = '${tikaMetadataProducer.name}'", 3)
+        queryTest(pipeline, "SELECT FROM Metadata where createdBy = '${nlpParserProducer.name}'", 3000)
+        queryTest(pipeline, "SELECT FROM Metadata where createdBy = '${tikaMetadataProducer.name}'", 3000)
     }
 
 
