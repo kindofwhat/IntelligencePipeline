@@ -1,0 +1,5 @@
+dependencies {
+    compile project(':pipeline-spi')
+    compile 'org.jetbrains.exposed:exposed:0.15.1'
+}
+
